@@ -311,9 +311,9 @@ int main(void) {
         dot_y = 120 - ((int)ay * 100) / 16384;
 
         // 4. clamp so dot stays on screen
-        if (dot_x <   8) dot_x =   8;
+        if (dot_x < 8) dot_x =   8;
         if (dot_x > 311) dot_x = 311;
-        if (dot_y <   8) dot_y =   8;
+        if (dot_y < 8) dot_y =   8;
         if (dot_y > 231) dot_y = 231;
 
         // 5. draw dot at new position
