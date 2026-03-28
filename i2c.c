@@ -15,8 +15,8 @@
 //   JP1 Pin 3  →  MPU SCL   (clock wire)
 //   JP1 Pin 4  →  MPU SDA   (data wire)
 //
-//   ALSO: put a 4.7k resistor between SCL and 3.3V
-//         put a 4.7k resistor between SDA and 3.3V
+//   ALSO: put a 10k resistor between SCL and 3.3V
+//         put a 10k resistor between SDA and 3.3V
 //   (these "pull-up" resistors are required for I2C to work)
 //   (your GY module might already have them — look for R1/R2 near the pins)
 
@@ -53,8 +53,8 @@ short int Buffer1[240][512];
 volatile int *jp1_data = (volatile int *)0xFF200060;
 volatile int *jp1_dir  = (volatile int *)0xFF200064;
 
-#define SCL_BIT  0   // JP1 bit 0 = pin 3 on the header = SCL wire
-#define SDA_BIT  1   // JP1 bit 1 = pin 4 on the header = SDA wire
+#define SCL_BIT  0   // JP1 GPIO bit 0 = SCL wire
+#define SDA_BIT  1   // JP1 GPIO bit 1 = SDA wire
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MPU-9250 I2C address and register numbers
@@ -74,6 +74,22 @@ volatile int *jp1_dir  = (volatile int *)0xFF200064;
 #define REG_ACCEL_XOUT_L 0x3C   // X acceleration low byte
 #define REG_ACCEL_YOUT_H 0x3D   // Y acceleration high byte
 #define REG_ACCEL_YOUT_L 0x3E   // Y acceleration low byte
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sensitivity tuning
+// ─────────────────────────────────────────────────────────────────────────────
+
+// How many accelerometer counts = "full tilt" (maps to screen edge).
+// Lower = more sensitive. Higher = need bigger tilt to reach edge.
+//   6000 → sluggish, needs big tilts
+//   4000 → natural, recommended
+//   2000 → very twitchy, small tilt = full movement
+#define TILT_SCALE  4000
+
+// Dead zone: ignore readings smaller than this when board is flat.
+// Prevents drift when sitting still on a table.
+// Raise this if the dot creeps around when you're not touching it.
+#define DEAD_ZONE   800
 
 // ─────────────────────────────────────────────────────────────────────────────
 // I2C bit-bang low level — pin wiggling
@@ -303,20 +319,25 @@ int main(void) {
         // 2. erase old dot position
         fill_circle(old_x, old_y, 8, BLACK);
 
-        // 3. convert tilt to screen position
-        //    ax is roughly -16384 to +16384
-        //    we map that range to roughly ±150 pixels from center
-        //    negate ay because tilting forward = positive Y on chip but up on screen
-        dot_x = 160 + ((int)ax * 140) / 16384;
-        dot_y = 120 - ((int)ay * 100) / 16384;
+        // 3. apply dead zone — ignore tiny noise when board is flat
+        int ix = (int)ax;
+        int iy = (int)ay;
+        if (ix > -DEAD_ZONE && ix < DEAD_ZONE) ix = 0;
+        if (iy > -DEAD_ZONE && iy < DEAD_ZONE) iy = 0;
 
-        // 4. clamp so dot stays on screen
-        if (dot_x < 8) dot_x =   8;
+        // 4. convert tilt to screen position
+        //    TILT_SCALE counts = full screen width/height of movement
+        //    negate iy because tilting forward = positive Y on chip but up on screen
+        dot_x = 160 + (ix * 150) / TILT_SCALE;
+        dot_y = 120 - (iy * 110) / TILT_SCALE;
+
+        // 5. clamp so dot stays on screen
+        if (dot_x <   8) dot_x =   8;
         if (dot_x > 311) dot_x = 311;
-        if (dot_y < 8) dot_y =   8;
+        if (dot_y <   8) dot_y =   8;
         if (dot_y > 231) dot_y = 231;
 
-        // 5. draw dot at new position
+        // 6. draw dot at new position
         fill_circle(dot_x, dot_y, 8, CYAN);
 
         old_x = dot_x;
