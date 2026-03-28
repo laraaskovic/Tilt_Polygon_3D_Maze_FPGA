@@ -296,7 +296,6 @@ void wait_for_vsync() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 int main(void) {
-    // Point the VGA controller at our pixel buffer
     volatile int *pixel_ctrl = (volatile int *)0xFF203020;
     *(pixel_ctrl + 1) = (int)Buffer1;
     *pixel_ctrl = 1;
@@ -306,9 +305,16 @@ int main(void) {
     clear_screen();
     mpu_init();
 
-    // dot starts in the center of the screen
-    int dot_x = 160, dot_y = 120;
-    int old_x = dot_x, old_y = dot_y;
+    // use fixed-point: store position *16 so we can do sub-pixel movement
+    // dot starts center screen
+    int pos_x = 160 * 16;
+    int pos_y = 120 * 16;
+
+    // velocity in fixed-point units per frame
+    int vel_x = 0;
+    int vel_y = 0;
+
+    int old_x = 160, old_y = 120;
 
     short ax, ay;
 
@@ -316,28 +322,39 @@ int main(void) {
         // 1. read accelerometer
         mpu_read_accel(&ax, &ay);
 
-        // 2. erase old dot position
+        // 2. tilt adds to velocity (acceleration)
+        //    divide by 512 to keep it gentle — raise to make it snappier
+        vel_x += (int)ax / 512;
+        vel_y -= (int)ay / 512;  // negate: forward tilt = up on screen
+
+        // 3. friction — multiply velocity by 0.92 each frame so it
+        //    gradually slows down when you level the board
+        //    (14/16 ≈ 0.875, adjust numerator to taste: 15=less friction, 13=more)
+        vel_x = (vel_x * 14) / 16;
+        vel_y = (vel_y * 14) / 16;
+
+        // 4. clamp velocity so it doesn't get out of hand
+        if (vel_x >  48) vel_x =  48;
+        if (vel_x < -48) vel_x = -48;
+        if (vel_y >  48) vel_y =  48;
+        if (vel_y < -48) vel_y = -48;
+
+        // 5. update position
+        pos_x += vel_x;
+        pos_y += vel_y;
+
+        // 6. bounce off walls — flip velocity on hit
+        if (pos_x < 8*16)   { pos_x = 8*16;   vel_x = -vel_x / 2; }
+        if (pos_x > 311*16) { pos_x = 311*16;  vel_x = -vel_x / 2; }
+        if (pos_y < 8*16)   { pos_y = 8*16;    vel_y = -vel_y / 2; }
+        if (pos_y > 231*16) { pos_y = 231*16;  vel_y = -vel_y / 2; }
+
+        // 7. convert fixed-point back to screen pixels
+        int dot_x = pos_x / 16;
+        int dot_y = pos_y / 16;
+
+        // 8. erase old, draw new
         fill_circle(old_x, old_y, 8, BLACK);
-
-        // 3. apply dead zone — ignore tiny noise when board is flat
-        int ix = (int)ax;
-        int iy = (int)ay;
-        if (ix > -DEAD_ZONE && ix < DEAD_ZONE) ix = 0;
-        if (iy > -DEAD_ZONE && iy < DEAD_ZONE) iy = 0;
-
-        // 4. convert tilt to screen position
-        //    TILT_SCALE counts = full screen width/height of movement
-        //    negate iy because tilting forward = positive Y on chip but up on screen
-        dot_x = 160 + (ix * 150) / TILT_SCALE;
-        dot_y = 120 - (iy * 110) / TILT_SCALE;
-
-        // 5. clamp so dot stays on screen
-        if (dot_x <   8) dot_x =   8;
-        if (dot_x > 311) dot_x = 311;
-        if (dot_y <   8) dot_y =   8;
-        if (dot_y > 231) dot_y = 231;
-
-        // 6. draw dot at new position
         fill_circle(dot_x, dot_y, 8, CYAN);
 
         old_x = dot_x;
