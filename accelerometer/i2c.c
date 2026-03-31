@@ -1,141 +1,196 @@
 #include <stdint.h>
 
-// ── Hardware ────────────────────────────────────────────────────────────────
+// ── VGA pixel buffer ────────────────────────────────────────────────────────
+#define SCREEN_W 320
+#define SCREEN_H 240
+short int Buffer1[240][512];
+
+// ── GPIO ────────────────────────────────────────────────────────────────────
 typedef struct { volatile unsigned int DDR; volatile unsigned int DATA; } GPIO_t;
 
-#define GPIO_BASE  ((GPIO_t *)0xFF200000)   // adjust to your Platform Designer addr
-#define SCL_PIN    0
-#define SDA_PIN    1
+#define GPIO_BASE ((GPIO_t *)0xFF200060)  // JP1 expansion header
+#define SCL_PIN 0
+#define SDA_PIN 1
 
 // ── MPU-6050 ─────────────────────────────────────────────────────────────────
-#define MPU_ADDR      0x68   // AD0 low = 0x68, AD0 high = 0x69
+#define MPU_ADDR      0x68
 #define REG_PWR_MGMT  0x6B
-#define REG_ACCEL_X_H 0x3B   // X,Y,Z high/low follow sequentially
+#define REG_ACCEL_X_H 0x3B
 
-// ── I2C primitives ──────────────────────────────────────────────────────────
+// ── debug colors — 6x6 square top-left ──────────────────────────────────────
+#define DBG_X 2
+#define DBG_Y 2
 
-// Release a line high (open-drain: stop driving, let pull-up do the work)
-void sda_high(GPIO_t *g){ pinMode(g, SDA_PIN, 0); }   // input = released
-void sda_low (GPIO_t *g){ pinMode(g, SDA_PIN, 1); digitalWrite(g, SDA_PIN, 0); }
-void scl_high(GPIO_t *g){ pinMode(g, SCL_PIN, 1); digitalWrite(g, SCL_PIN, 1); }
-void scl_low (GPIO_t *g){ pinMode(g, SCL_PIN, 1); digitalWrite(g, SCL_PIN, 0); }
-int  sda_read(GPIO_t *g){ pinMode(g, SDA_PIN, 0); return digitalRead(g, SDA_PIN); }
-
-// START: SDA falls while SCL is high
-void i2c_start(GPIO_t *g){
-    sda_high(g); scl_high(g); delay(5);
-    sda_low(g);              delay(5);
-    scl_low(g);              delay(5);
+void plot_pixel(int x, int y, short color) {
+    if (x < 0 || x >= SCREEN_W || y < 0 || y >= SCREEN_H) return;
+    Buffer1[y][x] = color;
 }
 
-// STOP: SDA rises while SCL is high
-void i2c_stop(GPIO_t *g){
-    sda_low(g);  scl_high(g); delay(5);
-    sda_high(g);              delay(5);
+void dbg_color(short color) {
+    for (int dy = 0; dy < 6; dy++)
+        for (int dx = 0; dx < 6; dx++)
+            plot_pixel(DBG_X + dx, DBG_Y + dy, color);
 }
 
-// Send one byte, return 0 if ACK received from slave
-int i2c_write_byte(GPIO_t *g, uint8_t byte){
-    for(int i = 7; i >= 0; i--){
-        if((byte >> i) & 1) sda_high(g);
-        else                sda_low(g);
-        delay(2);
-        scl_high(g); delay(5);
-        scl_low(g);  delay(2);
+void wait_for_vsync(void) {
+    volatile int *ctrl = (int *)0xFF203020;
+    *ctrl = 1;
+    while ((*(ctrl + 3) & 0x01) != 0);
+}
+
+void clear_screen(void) {
+    for (int y = 0; y < SCREEN_H; y++)
+        for (int x = 0; x < SCREEN_W; x++)
+            Buffer1[y][x] = 0x0000;
+}
+
+void draw_dot(int x, int y, short color) {
+    int r = 5;
+    for (int dy = -r; dy <= r; dy++)
+        for (int dx = -r; dx <= r; dx++)
+            if (dx*dx + dy*dy <= r*r)
+                plot_pixel(x + dx, y + dy, color);
+}
+
+// ── I2C ─────────────────────────────────────────────────────────────────────
+void sda_high(GPIO_t *g) { g->DDR &= ~(1 << SDA_PIN); }
+void sda_low (GPIO_t *g) { g->DDR |=  (1 << SDA_PIN); g->DATA &= ~(1 << SDA_PIN); }
+void scl_high(GPIO_t *g) { g->DDR |=  (1 << SCL_PIN); g->DATA |=  (1 << SCL_PIN); }
+void scl_low (GPIO_t *g) { g->DDR |=  (1 << SCL_PIN); g->DATA &= ~(1 << SCL_PIN); }
+int  sda_read(GPIO_t *g) { g->DDR &= ~(1 << SDA_PIN); return (g->DATA >> SDA_PIN) & 1; }
+
+void i2c_delay(void) { volatile int i; for (i = 0; i < 200; i++); }
+
+void i2c_start(GPIO_t *g) {
+    sda_high(g); scl_high(g); i2c_delay();
+    sda_low(g);               i2c_delay();
+    scl_low(g);               i2c_delay();
+}
+
+void i2c_stop(GPIO_t *g) {
+    sda_low(g);  scl_high(g); i2c_delay();
+    sda_high(g);              i2c_delay();
+}
+
+// returns 0 on ACK, 1 on NACK
+int i2c_write_byte(GPIO_t *g, unsigned char byte) {
+    for (int i = 7; i >= 0; i--) {
+        if ((byte >> i) & 1) sda_high(g);
+        else                 sda_low(g);
+        i2c_delay();
+        scl_high(g); i2c_delay();
+        scl_low(g);  i2c_delay();
     }
-    // Read ACK bit (slave pulls SDA low to ACK)
-    sda_high(g);          // release SDA
-    scl_high(g); delay(5);
+    sda_high(g);
+    scl_high(g); i2c_delay();
     int nack = sda_read(g);
-    scl_low(g);  delay(2);
-    return nack;           // 0 = ACK ✓, 1 = NACK ✗
+    scl_low(g);  i2c_delay();
+    return nack;
 }
 
-// Read one byte, send ACK if ack=1, NACK if ack=0 (last byte)
-uint8_t i2c_read_byte(GPIO_t *g, int ack){
-    uint8_t byte = 0;
-    sda_high(g);  // release SDA for slave to drive
-    for(int i = 7; i >= 0; i--){
-        scl_high(g); delay(5);
-        if(sda_read(g)) byte |= (1 << i);
-        scl_low(g);  delay(5);
+unsigned char i2c_read_byte(GPIO_t *g, int ack) {
+    unsigned char byte = 0;
+    sda_high(g);
+    for (int i = 7; i >= 0; i--) {
+        scl_high(g); i2c_delay();
+        if (sda_read(g)) byte |= (1 << i);
+        scl_low(g);  i2c_delay();
     }
-    // Send ACK/NACK
-    if(ack) sda_low(g);
-    else    sda_high(g);
-    scl_high(g); delay(5);
-    scl_low(g);  delay(2);
+    if (ack) sda_low(g);
+    else     sda_high(g);
+    scl_high(g); i2c_delay();
+    scl_low(g);  i2c_delay();
     sda_high(g);
     return byte;
 }
 
-// ── MPU-6050 helpers ────────────────────────────────────────────────────────
-
-void mpu_write_reg(GPIO_t *g, uint8_t reg, uint8_t val){
+void mpu_write_reg(GPIO_t *g, unsigned char reg, unsigned char val) {
     i2c_start(g);
-    i2c_write_byte(g, MPU_ADDR << 1);   // address + write bit
+    i2c_write_byte(g, MPU_ADDR << 1);
     i2c_write_byte(g, reg);
     i2c_write_byte(g, val);
     i2c_stop(g);
 }
 
-// Read `len` consecutive bytes starting at `reg` into `buf`
-void mpu_read_regs(GPIO_t *g, uint8_t reg, uint8_t *buf, int len){
+void mpu_read_regs(GPIO_t *g, unsigned char reg, unsigned char *buf, int len) {
     i2c_start(g);
-    i2c_write_byte(g, MPU_ADDR << 1);       // write phase: set register pointer
+    i2c_write_byte(g, MPU_ADDR << 1);
     i2c_write_byte(g, reg);
-    i2c_start(g);                            // repeated START
-    i2c_write_byte(g, (MPU_ADDR << 1) | 1); // read phase
-    for(int i = 0; i < len; i++)
-        buf[i] = i2c_read_byte(g, i < len-1); // ACK all but last
+    i2c_start(g);
+    i2c_write_byte(g, (MPU_ADDR << 1) | 1);
+    for (int i = 0; i < len; i++)
+        buf[i] = i2c_read_byte(g, i < len - 1);
     i2c_stop(g);
 }
 
-void mpu_init(GPIO_t *g){
-    mpu_write_reg(g, REG_PWR_MGMT, 0x00);  // wake up (clears sleep bit)
-}
+void mpu_init(GPIO_t *g) {
+    i2c_start(g);
+    int nack = i2c_write_byte(g, MPU_ADDR << 1);
+    i2c_stop(g);
 
-// Returns raw 16-bit accel values (±2g range by default)
-typedef struct { int16_t x, y, z; } Accel;
-
-Accel mpu_read_accel(GPIO_t *g){
-    uint8_t buf[6];
-    mpu_read_regs(g, REG_ACCEL_X_H, buf, 6);
-    Accel a;
-    a.x = (int16_t)((buf[0] << 8) | buf[1]);
-    a.y = (int16_t)((buf[2] << 8) | buf[3]);
-    a.z = (int16_t)((buf[4] << 8) | buf[5]);
-    return a;
-}
-
-// ── Dot position from tilt ──────────────────────────────────────────────────
-// VGA 640x480, dot starts centre.  Tune SENSITIVITY to taste.
-#define VGA_W 640
-#define VGA_H 480
-#define SENSITIVITY 4000   // raw LSBs per full screen half-width
-
-void accel_to_dot(Accel a, int *dot_x, int *dot_y){
-    // X tilt  → horizontal,  Y tilt → vertical
-    // Clamp to [0, VGA_W/H - 1]
-    int x = (VGA_W/2) + (int)(a.x * (VGA_W/2)) / SENSITIVITY;
-    int y = (VGA_H/2) - (int)(a.y * (VGA_H/2)) / SENSITIVITY; // flip Y axis
-    if(x < 0) x = 0;  if(x >= VGA_W) x = VGA_W-1;
-    if(y < 0) y = 0;  if(y >= VGA_H) y = VGA_H-1;
-    *dot_x = x;
-    *dot_y = y;
-}
-
-// ── Main loop ───────────────────────────────────────────────────────────────
-int main(void){
-    GPIO_t *gpio = GPIO_BASE;
-    mpu_init(gpio);
-
-    int dot_x = VGA_W/2, dot_y = VGA_H/2;
-
-    while(1){
-        Accel a = mpu_read_accel(gpio);
-        accel_to_dot(a, &dot_x, &dot_y);
-        vga_draw_dot(dot_x, dot_y);   // your existing VGA function
-        delay(10000);                  // ~10 ms poll rate
+    if (nack) {
+        // red — can't reach MPU, check wiring
+        dbg_color(0xF800);
+    } else {
+        // cyan — MPU found
+        dbg_color(0x07FF);
+        mpu_write_reg(g, REG_PWR_MGMT, 0x00);
     }
+}
+
+// ── main ─────────────────────────────────────────────────────────────────────
+int main(void) {
+    volatile int *pixel_ctrl = (int *)0xFF203020;
+    *(pixel_ctrl + 1) = (int)&Buffer1;
+    *pixel_ctrl = 1;
+    while ((*(pixel_ctrl + 3) & 0x01) != 0);
+    *(pixel_ctrl + 1) = (int)&Buffer1;
+
+    GPIO_t *gpio = GPIO_BASE;
+
+    clear_screen();
+    mpu_init(gpio);
+    wait_for_vsync();
+
+    int dot_x = SCREEN_W / 2;
+    int dot_y = SCREEN_H / 2;
+
+    #define SENSITIVITY 6000
+    #define DEADZONE    800
+
+    while (1) {
+        unsigned char buf[4];
+        mpu_read_regs(gpio, REG_ACCEL_X_H, buf, 4);
+
+        short ax = (short)((buf[0] << 8) | buf[1]);
+        short ay = (short)((buf[2] << 8) | buf[3]);
+
+        // yellow during read
+        dbg_color(0xFFE0);
+
+        // erase old dot
+        draw_dot(dot_x, dot_y, 0x0000);
+
+        // update position
+        if (ax >  DEADZONE) dot_x += (ax / SENSITIVITY) + 1;
+        if (ax < -DEADZONE) dot_x -= (-ax / SENSITIVITY) + 1;
+        if (ay >  DEADZONE) dot_y -= (ay / SENSITIVITY) + 1;
+        if (ay < -DEADZONE) dot_y += (-ay / SENSITIVITY) + 1;
+
+        // clamp
+        if (dot_x < 5)            dot_x = 5;
+        if (dot_x >= SCREEN_W-5)  dot_x = SCREEN_W-6;
+        if (dot_y < 5)            dot_y = 5;
+        if (dot_y >= SCREEN_H-5)  dot_y = SCREEN_H-6;
+
+        // draw new dot — white
+        draw_dot(dot_x, dot_y, 0xFFFF);
+
+        // green = good read
+        dbg_color(0x07E0);
+
+        wait_for_vsync();
+    }
+
+    return 0;
 }
