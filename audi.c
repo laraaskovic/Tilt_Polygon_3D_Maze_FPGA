@@ -1355,71 +1355,61 @@ void show_game_over_screen(void) {
 
 
 
-// Tick-based timing 
-// One master counter increments every loop. Thresholds below control rates.
-// Tune PHYS_INTERVAL and AGENT_INTERVAL to adjust speeds.
-#define PHYS_INTERVAL   500    // lower = faster ball
-#define AGENT_INTERVAL  1500   // higher = slower agent (3x slower than ball)
 
-static int master_tick  = 0;
-static int phys_acc     = 0;
-static int agent_acc    = 0;
-
-// ── Helper: redraw everything on top of the current map ───────────────────
-void redraw_all(int cm, int px, int py) {
-    draw_target(target_col, target_row, COL_TARGET);
-    if (portal.active) draw_portals();
-    if (game_mode != MODE_FREE)
-        draw_ball(agent_px, agent_py, COL_AGENT, prev_tilt);
-    draw_ball(px, py, COL_PLAYER, prev_tilt);
-}
-
-// ── Map draw — static geometry only, no dynamic objects ──────────────────
+// clear screen and redraw all wall tiles for map m
 void draw_map(int m, char tilt) {
+	
     for (int y = 0; y < SCREEN_H; y++)
         for (int x = 0; x < SCREEN_W; x++)
             Buffer1[y][x] = BLACK;
-
-    plot_logo();
-    plot_scoreboard();
-    plot_score(playerScore, computerScore);
-    draw_timer(round_timer_sec);
+	
+	plot_logo();
+	plot_scoreboard();
+	plot_score(playerScore, computerScore);
+	draw_timer(round_timer_sec);
 
     for (int row = 0; row < ROWS; row++)
         for (int col = 0; col < COLS; col++)
             if (maps[m][row][col] == 1)
                 draw_wall_tile(col, row, tilt);
-    // dynamic objects drawn separately via redraw_all()
+
+    if (portal.active) draw_portals();
+
 }
 
-// ── Round reset ───────────────────────────────────────────────────────────
+
+// ────────────────────────────────────────────────────────────────────────────
+// round reset — pick new map, place both balls, spawn target
+// ────────────────────────────────────────────────────────────────────────────
+
 void reset_round(int *cm, int *px, int *py) {
-    round_timer_sec    = ROUND_TIME_SEC;
-    timer_tick_count   = 0;
-    portal.active      = 0;
-    portal_spawn_timer = 0;
-    phys_acc           = 0;
-    agent_acc          = 0;
+    round_timer_sec  = ROUND_TIME_SEC; 
+    timer_tick_count = 0; 
 
     *cm = rand() % NUM_MAPS;
     draw_map(*cm, 'n');
-
-    *px      = col_to_px(1);
-    *py      = row_to_py(1);
+    *px = col_to_px(1);
+    *py = row_to_py(1);
     agent_px = col_to_px(2);
     agent_py = row_to_py(1);
+    
+    //draw_ball(*px, *py, COL_PLAYER, prev_tilt);
+    if (game_mode != MODE_FREE)
+        draw_ball(agent_px, agent_py, COL_AGENT, prev_tilt);
 
-    dfs_len   = 0;
+    dfs_len = 0;
     dfs_index = 0;
-    prev_tilt = 'u';
-
     spawn_target(*cm, 1, 1);
-    redraw_all(*cm, *px, *py);
+	prev_tilt = 'u';
+
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-int justBounced       = 0;
-int cyclesSinceBounce = 0;
+// ────────────────────────────────────────────────────────────────────────────
+// main game loop
+// ────────────────────────────────────────────────────────────────────────────
+
+int justBounced = 0;
+int cyclesSinceBounce;
 
 int main(void) {
     volatile int *pixel_ctrl = (int *)0xFF203020;
@@ -1428,19 +1418,29 @@ int main(void) {
     while ((*(pixel_ctrl+3) & 0x01) != 0);
     *(pixel_ctrl+1) = (int)&Buffer1;
 
-    int cm = 0;
-    draw_map(cm, 'n');
+    int cm = 0; // Current map, start at first then be random
+    draw_map(cm, 0);
 
+    // player starts at tile (1,1)
     int px = col_to_px(1);
     int py = row_to_py(1);
+
+	draw_ball(px, py, COL_PLAYER, prev_tilt);
+	
+    // RL agent starts at tile (2,1), one tile right of player
     agent_px = col_to_px(2);
     agent_py = row_to_py(1);
+	
+	 if (game_mode != MODE_FREE)
+        draw_ball(agent_px, agent_py, COL_AGENT, prev_tilt);
 
-    int ballSpeed = 0;
-    int e0 = 0, skip = 0;
+    spawn_target(cm, 1, 1); // Spawns in a non taken space
 
-    spawn_target(cm, 1, 1);
-    redraw_all(cm, px, py);
+    int e0 = 0, skip = 0; //for ps2 keyboard
+    int agent_tick = 0; //how fast to update RL model (speed)
+    int phys_tick  = 0;
+
+	int ballSpeed = 0;
 
     timer_hw_init();
 
@@ -1448,122 +1448,175 @@ int main(void) {
     GPIO_t *gpio = GPIO_BASE;
     gpio->DDR  &= ~((1 << SCL_PIN) | (1 << SDA_PIN));
     gpio->DATA &= ~((1 << SCL_PIN) | (1 << SDA_PIN));
-    mpu_write_reg(gpio, REG_PWR_MGMT, 0x00);
-    mpu_write_reg(gpio, 0x1A, 0x03);
+    mpu_write_reg(gpio, REG_PWR_MGMT, 0x00);  // wake up
+    mpu_write_reg(gpio, 0x1A, 0x03);           // low-pass filter
+
 
     while (1) {
+        // RL AGENT MOVEMENT
+        update_audio();  
 
-        // ── AUDIO — called every single iteration, never skipped ──────────
-        update_audio();
-
-        // ── MASTER TICK ───────────────────────────────────────────────────
-        master_tick++;
-        phys_acc++;
-        agent_acc++;
-
-        // ── ROUND TIMER ───────────────────────────────────────────────────
+        // TIMER 
         if (timer_hw_tick()) {
             round_timer_sec--;
             draw_timer(round_timer_sec);
 
             if (round_timer_sec <= 0) {
                 trigger_clip(snd_game_over, snd_game_over_len);
+                
                 volatile int d = 0; while (d < 2000000) d++;
                 show_game_over_screen();
 
-                playerScore   = 0;
+                playerScore = 0;
                 computerScore = 0;
-                ballSpeed     = 0;
-                prev_tilt     = 'n';
+                round_timer_sec = ROUND_TIME_SEC;
+                ballSpeed   = 0;
+                prev_tilt  = 'n';
+                agent_tick = 0;
                 reset_round(&cm, &px, &py);
             }
         }
 
-        // ── AGENT TICK ────────────────────────────────────────────────────
-        if (agent_acc >= AGENT_INTERVAL) {
-            agent_acc = 0;
+        agent_tick++;
+                
+        if (agent_tick >= 60000) {
+            agent_tick = 0;
 
+            // ONLY move agent if a mode is active
             if (game_mode != MODE_FREE) {
+
                 int ac = px_to_col(agent_px);
                 int ar = py_to_row(agent_py);
-                // snap to tile centre before moving
+
                 agent_px = col_to_px(ac);
                 agent_py = row_to_py(ar);
 
                 int action = 0;
-                if (game_mode == MODE_RANDOM) {
+
+                // MODE SWITCH
+                if (game_mode == MODE_RANDOM) { //key 0
                     action = random_action(cm, ac, ar);
                 }
-                else if (game_mode == MODE_DFS) {
-                    if (dfs_index >= dfs_len) compute_dfs_path(cm, ac, ar);
+                else if (game_mode == MODE_DFS) { //key 1
+                    if (dfs_index >= dfs_len) {
+                        compute_dfs_path(cm, ac, ar); // recompute if needed
+                    }
                     action = dfs_next_action(cm, ac, ar);
                 }
-                else if (game_mode == MODE_RL) {
-                    action = qt_best_action(ac, ar, target_col, target_row, cm);
+                else if (game_mode == MODE_RL) { //key 2
+                    action = qt_best_action(ac, ar, target_col, target_row, cm); //use the table c array thing
                 }
 
-                int nac = ac, nar = ar;
-                if      (action == 0) nar--;
+                int nac = ac, nar = ar; //update positions
+
+                if (action == 0) nar--;
                 else if (action == 1) nar++;
                 else if (action == 2) nac--;
                 else if (action == 3) nac++;
 
-                if (nac >= 0 && nac < COLS && nar >= 0 && nar < ROWS
-                        && maps[cm][nar][nac] == 0) {
+                // if in range draw
+                if (nac >= 0 && nac < COLS && nar >= 0 && nar < ROWS && maps[cm][nar][nac] == 0) {
+
                     draw_ball(agent_px, agent_py, BLACK, prev_tilt);
+
                     agent_px = col_to_px(nac);
                     agent_py = row_to_py(nar);
-                    redraw_all(cm, px, py);
+
+                    draw_target(target_col, target_row, COL_TARGET);
+
+                    if (game_mode != MODE_FREE)
+                        draw_ball(agent_px, agent_py, COL_AGENT, prev_tilt);
+
                 }
 
                 if (reached_target(agent_px, agent_py, target_col, target_row)) {
                     computerScore++;
-                    trigger_clip(snd_target, snd_target_len);
-                    ballSpeed = 0;
-                    dfs_index = dfs_len = 0;
+                    trigger_clip(snd_target, snd_target_len);  
+
                     reset_round(&cm, &px, &py);
-                    continue;  // restart loop so audio isn't delayed
+                    dfs_index = dfs_len = 0; // reset DFS state
+                    continue;
                 }
             }
         }
 
-        // ── PLAYER PHYSICS TICK ───────────────────────────────────────────
-        if (phys_acc >= PHYS_INTERVAL) {
-            phys_acc = 0;
 
-            // bounce cooldown
-            if (justBounced) {
-                cyclesSinceBounce++;
-                if (cyclesSinceBounce >= 2) {
-                    justBounced       = 0;
-                    cyclesSinceBounce = 0;
+        // ── PLAYER PHYSICS ────────────────────────────────────────────────
+        phys_tick++;
+		if(justBounced){
+			cyclesSinceBounce++;
+		}
+		if(cyclesSinceBounce == 2){
+			justBounced = 0;
+			cyclesSinceBounce = 0;
+		}
+        if (phys_tick >= 8000) {
+            phys_tick = 0;
+
+
+            // advance portal animation
+            if (portal.active) {
+                portal_frame_timer++;
+                if (portal_frame_timer >= PORTAL_ANIM_SPEED) {
+                    portal_frame_timer = 0;
+                    // erase old frame before drawing new one
+                    erase_portals();
+                    portal_frame = (portal_frame + 1) % PORTAL_FRAME_COUNT;
+                    draw_portals();
                 }
             }
 
-            // accelerate ball up to max speed
-            if (ballSpeed >= 0 && ballSpeed < 8)  ballSpeed++;
-            if (ballSpeed < 0  && ballSpeed > -8)  ballSpeed--;
+
+
 
             int nx = px, ny = py;
-            if      (prev_tilt == 'u') ny -= ballSpeed;
-            else if (prev_tilt == 'd') ny += ballSpeed;
-            else if (prev_tilt == 'r') nx += ballSpeed;
-            else if (prev_tilt == 'l') nx -= ballSpeed;
 
-            if (!hits_wall(cm, nx, ny)) {
-                draw_ball(px, py, BLACK, prev_tilt);
-                px = nx;
+            if(ballSpeed<8)
+                ballSpeed++;
+                
+            if(prev_tilt == 'u'){
+                ny-=ballSpeed;
+            } 
+            else if(prev_tilt == 'd') {
+                ny+=ballSpeed;
+            } 
+            else if(prev_tilt == 'r'){
+                nx+=ballSpeed;
+            } 
+            else if(prev_tilt == 'l'){
+                nx-=ballSpeed;
+            }
+                    
+            draw_target(target_col, target_row, COL_TARGET); // redraw target
+            
+            if (game_mode != MODE_FREE)
+                draw_ball(agent_px, agent_py, COL_AGENT, prev_tilt);
+            
+            draw_ball(px, py, COL_PLAYER, prev_tilt); // draw player
+			
+			
+            if (!hits_wall(cm, nx, ny)) {   
+                draw_ball(px, py, BLACK, prev_tilt);                          // erase player
+                px = nx; 
                 py = ny;
-                redraw_all(cm, px, py);
-            } else {
-                if (!justBounced) {
-                    ballSpeed         = -ballSpeed;
-                    justBounced       = 1;
-                    cyclesSinceBounce = 0;
-                }
+
+                draw_target(target_col, target_row, COL_TARGET); 	// redraw target
+
+                if (game_mode != MODE_FREE)
+                    draw_ball(agent_px, agent_py, COL_AGENT, prev_tilt);
+
+                draw_ball(px, py, COL_PLAYER, prev_tilt);                   // draw player
+            } 
+			
+            else {
+                //trigger_sound(SOUND_WALL);
+				if (!justBounced){
+					ballSpeed *= -1;
+					justBounced=1;
+				}
             }
 
-            // portal spawn / despawn
+            // Portal spawn/despawn timer 
             portal_spawn_timer++;
             if (!portal.active && portal_spawn_timer >= PORTAL_SPAWN_INTERVAL) {
                 portal_spawn_timer = 0;
@@ -1573,34 +1626,40 @@ int main(void) {
                 portal.life--;
                 if (portal.life <= 0) {
                     erase_portals();
-                    portal.active      = 0;
+                    portal.active = 0;
                     portal_spawn_timer = 0;
                 }
             }
 
-            // teleport check
+            // Portal teleport check (after moving ball) ────────────────────
             int dest_col, dest_row;
             if (check_portal(px, py, &dest_col, &dest_row)) {
                 draw_ball(px, py, BLACK, prev_tilt);
                 erase_portals();
-                portal.active      = 0;
+                portal.active = 0;
                 portal_spawn_timer = 0;
-                px        = col_to_px(dest_col);
-                py        = row_to_py(dest_row);
-                ballSpeed = 0;
-                redraw_all(cm, px, py);
+                // land the ball in the center of the destination tile
+                px = col_to_px(dest_col);
+                py = row_to_py(dest_row);
+                ballSpeed = 0;   // brief pause after warp feels good
+                draw_ball(px, py, COL_PLAYER, prev_tilt);
             }
 
-            // player scores
             if (reached_target(px, py, target_col, target_row)) {
                 playerScore++;
                 trigger_clip(snd_target, snd_target_len);
-                ballSpeed = 0;
+
+                ballSpeed=0;
+                reset_round(&cm, &px, &py);
+                agent_tick = 0;
                 prev_tilt = 'n';
                 dfs_index = dfs_len = 0;
-                reset_round(&cm, &px, &py);
-            }
+
+            } 
+
+
         }
+			
 
         // ── ACCELEROMETER INPUT ───────────────────────────────────────────
         if (accel_cooldown > 0) {
@@ -1614,84 +1673,163 @@ int main(void) {
             int abs_ax = ax < 0 ? -ax : ax;
             int abs_ay = ay < 0 ? -ay : ay;
 
-            if (abs_ax > TILT_THRESHOLD || abs_ay > TILT_THRESHOLD) {
-                char new_tilt;
-                int  nx = px, ny = py;
+            int nx = px, ny = py;
+            char new_tilt = 'n';
 
+            if (abs_ax > TILT_THRESHOLD || abs_ay > TILT_THRESHOLD) {
                 if (abs_ax >= abs_ay) {
+                    // X axis dominant
                     if (ax > 0) { new_tilt = 'r'; nx++; }
                     else        { new_tilt = 'l'; nx--; }
                 } else {
+                    // Y axis dominant
                     if (ay > 0) { new_tilt = 'd'; ny++; }
                     else        { new_tilt = 'u'; ny--; }
                 }
 
+                // Redraw map if tilt direction changed (for 3D effect)
                 if (new_tilt != prev_tilt) {
                     prev_tilt = new_tilt;
-                    ballSpeed = 0;
                     draw_map(cm, prev_tilt);
-                    redraw_all(cm, px, py);
+                    draw_target(target_col, target_row, COL_TARGET);
+                    if (game_mode != MODE_FREE)
+                        draw_ball(agent_px, agent_py, COL_AGENT, prev_tilt);
+                    draw_ball(px, py, COL_PLAYER, prev_tilt);
                 }
 
+                // Move ball one tile if not hitting a wall
                 if (!hits_wall(cm, nx, ny)) {
                     draw_ball(px, py, BLACK, prev_tilt);
                     px = nx;
                     py = ny;
-                    redraw_all(cm, px, py);
+                    draw_target(target_col, target_row, COL_TARGET);
+                    if (game_mode != MODE_FREE)
+                        draw_ball(agent_px, agent_py, COL_AGENT, prev_tilt);
+                    draw_ball(px, py, COL_PLAYER, prev_tilt);
                 }
 
                 accel_cooldown = ACCEL_MOVE_COOLDOWN;
             }
         }
+        // ── END ACCELEROMETER INPUT ───────────────────────────────────────
 
-        // ── KEYBOARD INPUT ────────────────────────────────────────────────
+
+		
+        // PLAYER KEYBOARD INPUT 
+        // PS2 protocol: 0xF0 = key release prefix, 0xE0 = extended key prefix
         int b;
+
         while ((b = ps2_read()) >= 0) {
-            if (skip) { skip = 0; e0 = 0; continue; }
-            if (b == 0xF0) { skip = 1; continue; }
-            if (b == 0xE0) { e0   = 1; continue; }
-
-            // mode switch — non-extended keys 0/1/2/3
+            if (skip) { skip=0; e0=0; continue; }   // discard key-release scan code
+            if (b == 0xF0) { skip=1; continue; }    // next byte is a key release
+            if (b == 0xE0) { e0=1;   continue; }    // next byte is extended key			
+			
+			// MODE SWITCH KEYS (check first before player movement)
             if (!e0) {
-                int mode_changed = 1;
-                if      (b == 0x45) game_mode = MODE_FREE;
-                else if (b == 0x16) game_mode = MODE_RANDOM;
-                else if (b == 0x1E) game_mode = MODE_DFS;
-                else if (b == 0x26) game_mode = MODE_RL;
-                else                mode_changed = 0;
-
-                if (mode_changed) {
+                if (b == 0x45) {  // '0' — free/player only
+                    game_mode = MODE_FREE;
                     dfs_index = dfs_len = 0;
                     draw_map(cm, prev_tilt);
-                    redraw_all(cm, px, py);
-                    e0 = 0;
-                    continue;
+                    draw_target(target_col, target_row, COL_TARGET);
+                    draw_ball(px, py, COL_PLAYER, prev_tilt);
+                }
+                else if (b == 0x16) {  // '1' — random
+                    game_mode = MODE_RANDOM;
+                    dfs_index = dfs_len = 0;
+                    draw_map(cm, prev_tilt);
+                    draw_target(target_col, target_row, COL_TARGET);
+                    if (game_mode != MODE_FREE)
+                        draw_ball(agent_px, agent_py, COL_AGENT, prev_tilt);
+                    draw_ball(px, py, COL_PLAYER, prev_tilt);
+                }
+                else if (b == 0x1E) {  // '2' — DFS
+                    game_mode = MODE_DFS;
+                    dfs_index = dfs_len = 0;
+                    draw_map(cm, prev_tilt);
+                    draw_target(target_col, target_row, COL_TARGET);
+                    if (game_mode != MODE_FREE)
+                        draw_ball(agent_px, agent_py, COL_AGENT, prev_tilt);
+                    draw_ball(px, py, COL_PLAYER, prev_tilt);
+                }
+                else if (b == 0x26) {  // '3' — RL
+                    game_mode = MODE_RL;
+                    dfs_index = dfs_len = 0;
+                    draw_map(cm, prev_tilt);
+                    draw_target(target_col, target_row, COL_TARGET);
+                    if (game_mode != MODE_FREE)
+                        draw_ball(agent_px, agent_py, COL_AGENT, prev_tilt);
+                    draw_ball(px, py, COL_PLAYER, prev_tilt);
                 }
             }
 
-            // direction keys — only change tilt, physics block moves the ball
-            char new_tilt = prev_tilt;
             if (e0) {
-                if      (b == 0x6B) new_tilt = 'l';  // left arrow
-                else if (b == 0x74) new_tilt = 'r';  // right arrow
-                else if (b == 0x75) new_tilt = 'u';  // up arrow
-                else if (b == 0x72) new_tilt = 'd';  // down arrow
+                if (b==0x6B) { // left arrow
+					
+					if (prev_tilt != 'l') {
+						prev_tilt = 'l';
+						draw_map(cm, 'l');
+						ballSpeed = 0;
+					}
+				} 
+				
+                else if (b==0x74) {// right arrow
+					  
+					if (prev_tilt != 'r') {
+						prev_tilt = 'r';
+						draw_map(cm, 'r');
+						ballSpeed = 0; 
+					}
+				}
+                else if (b==0x75) {// up arrow
+		
+					if (prev_tilt != 'u') {
+						prev_tilt = 'u';
+						draw_map(cm, 'u');
+						ballSpeed = 0;
+					}
+				}
+                else if (b==0x72) {// down arrow
+					
+					if (prev_tilt != 'd') {
+						prev_tilt = 'd';
+						draw_map(cm, 'd');
+						ballSpeed = 0;
+					}
+				}
                 e0 = 0;
-            } else {
-                if      (b == 0x1D) new_tilt = 'u';  // W
-                else if (b == 0x1B) new_tilt = 'd';  // S
-                else if (b == 0x1C) new_tilt = 'l';  // A
-                else if (b == 0x23) new_tilt = 'r';  // D
-            }
-
-            if (new_tilt != prev_tilt) {
-                prev_tilt = new_tilt;
-                ballSpeed = 0;
-                draw_map(cm, prev_tilt);
-                redraw_all(cm, px, py);
+            } 
+            else {
+                if (b==0x1D) { // W
+					if (prev_tilt != 'u'){
+						prev_tilt = 'u';
+						draw_map(cm, 'u');
+						ballSpeed = 0;
+					}
+				} 
+                else if (b==0x1B) { // S
+					if (prev_tilt != 'd'){
+						prev_tilt = 'd';
+						ballSpeed = 0;
+						draw_map(cm, 'd');
+					}
+				}  
+                else if (b==0x1C) {//A
+					if (prev_tilt != 'l'){
+						prev_tilt = 'l';
+						draw_map(cm, 'l');
+						ballSpeed=0;
+					}
+				}
+                else if (b==0x23) {//D
+					
+					if (prev_tilt != 'r') {
+						prev_tilt = 'r';
+						draw_map(cm, 'r');
+						ballSpeed=0;
+					}
+				} 
             }
         }
-
-    } // end while(1)
+    }
     return 0;
 }
