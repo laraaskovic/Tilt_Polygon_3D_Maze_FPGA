@@ -7,7 +7,8 @@
 // #include "snd_game_over.h"
 // #include "snd_wall.h"
 // #include "snd_target.h"
-
+// #include "snd_teleport.h"
+// #include "teleport_frames.h"
 
 // forward declarations
 int  col_to_px(int col);
@@ -894,6 +895,11 @@ void spawn_target(int m, int bc, int br) {
 #define PORTAL_RADIUS  6
 #define PORTAL_LIFETIME 300   // in phys_ticks (~3 seconds at tick>=500)
 
+//for sprite drawing
+int portal_frame = 0;
+int portal_frame_timer = 0;
+#define PORTAL_ANIM_SPEED 4   // ticks per frame, tune this to speed up/slow down
+
 typedef struct {
     int col_a, row_a;   // entry hole
     int col_b, row_b;   // exit hole
@@ -914,15 +920,26 @@ void draw_portal(int col, int row, short color) {
     int cy = projectPoint(x, y, z).y;
 
     if (color == BLACK) {
-        int r = PORTAL_RADIUS + 2;
-        for (int dy = -r; dy <= r; dy++)
-            for (int dx = -r; dx <= r; dx++)
-                plot_pixel(cx + dx, cy + dy, BLACK);
+        // erase: black out the sprite area
+        int x0 = cx - PORTAL_W / 2;
+        int y0 = cy - PORTAL_H / 2;
+        for (int dy = 0; dy < PORTAL_H; dy++)
+            for (int dx = 0; dx < PORTAL_W; dx++)
+                plot_pixel(x0 + dx, y0 + dy, BLACK);
         return;
     }
 
-    draw_circle(cx, cy, PORTAL_RADIUS,     color);
-    draw_circle(cx, cy, PORTAL_RADIUS - 1, color);  // double outline so it's visible
+    // draw current animation frame
+    unsigned short *frame = teleport_frames[portal_frame];
+    int x0 = cx - PORTAL_W / 2;
+    int y0 = cy - PORTAL_H / 2;
+    for (int dy = 0; dy < PORTAL_H; dy++) {
+        for (int dx = 0; dx < PORTAL_W; dx++) {
+            unsigned short px_color = frame[dy * PORTAL_W + dx];
+            if (px_color != 0x0000)   // skip transparent pixels
+                plot_pixel(x0 + dx, y0 + dy, px_color);
+        }
+    }
 }
 
 void draw_portals(void) {
@@ -983,6 +1000,7 @@ int check_portal(int px, int py, int *dest_col, int *dest_row) {
 
     if (maxBallX >= minAX && minBallX <= maxAX &&
         maxBallY >= minAY && minBallY <= maxAY) {
+        trigger_clip(snd_teleport, snd_teleport_len);
         *dest_col = portal.col_b;
         *dest_row = portal.row_b;
         return 1;
@@ -999,6 +1017,7 @@ int check_portal(int px, int py, int *dest_col, int *dest_row) {
 
     if (maxBallX >= minBX && minBallX <= maxBX &&
         maxBallY >= minBY && minBallY <= maxBY) {
+        trigger_clip(snd_teleport, snd_teleport_len);
         *dest_col = portal.col_a;
         *dest_row = portal.row_a;
         return 1;
@@ -1570,6 +1589,19 @@ int main(void) {
 		}
         if (phys_tick >= 8000) {
             phys_tick = 0;
+
+
+            // advance portal animation
+            if (portal.active) {
+                portal_frame_timer++;
+                if (portal_frame_timer >= PORTAL_ANIM_SPEED) {
+                    portal_frame_timer = 0;
+                    // erase old frame before drawing new one
+                    erase_portals();
+                    portal_frame = (portal_frame + 1) % PORTAL_FRAME_COUNT;
+                    draw_portals();
+                }
+            }
 
 
 

@@ -35,3 +35,4 @@ def convert(raw_filename, array_name, header_filename):
 convert('game_over.raw', 'snd_game_over', 'snd_game_over.h')
 convert('wall.raw',      'snd_wall',      'snd_wall.h')
 convert('target.raw',    'snd_target',    'snd_target.h')
+convert('teleport.raw',    'snd_teleport',    'snd_teleport.h')
