@@ -156,7 +156,7 @@ void clear(short color) {
 #define TILT_DAMPER 10
 #define GLOBAL_Z -250
 
-#define DODECA_W 50
+#define DODECA_W 40
 #define DODECAHEDRON_DIST 10*DODECA_W
 #define PSI 1.61803398875
 
@@ -272,7 +272,7 @@ struct TwoDPoint rotatePoint(int x, int y, int z) {
     struct TwoDPoint p;
     int d = DODECAHEDRON_DIST;
     int t = theta;
-
+	y=-y;
     p.x = (-((x*cos_table[t])-(z*sin_table[t]))*d)  /  ((x*(sin_table[t]))+(z*(cos_table[t])-d))  +160;
     p.y = (-(y)*d)  /  ((x*(sin_table[t]))+(z*(cos_table[t])-d))  +120;
 
@@ -308,6 +308,7 @@ struct Dodecahedron {
 
 void draw_dodecahedron(struct Dodecahedron d) {
 
+	int t = theta;
     // Helper macro: draw one closed pentagon (5 edges)
     #define PENT(a,b,c,dd,e) \
         line(a.x,a.y, b.x,b.y, WHITE); \
@@ -317,18 +318,18 @@ void draw_dodecahedron(struct Dodecahedron d) {
         line(e.x,e.y, a.x,a.y, WHITE);
 
     // All 12 pentagonal faces
-    PENT(d.O1, d.G1, d.G3, d.O6, d.R1)
-    PENT(d.O3, d.G1, d.G3, d.O5, d.R2)
-    PENT(d.O5, d.G3, d.O6, d.B3, d.B4)
-    PENT(d.O1, d.G1, d.O3, d.B2, d.B1)
-    PENT(d.O3, d.R2, d.R4, d.O4, d.B2)
-    PENT(d.O1, d.R1, d.R3, d.O8, d.B1)
-    PENT(d.O6, d.R1, d.R3, d.O7, d.B3)
-    PENT(d.O5, d.B4, d.O2, d.R4, d.R2)
-    PENT(d.B2, d.B1, d.O8, d.G2, d.O4)
-    PENT(d.B3, d.B4, d.O2, d.G4, d.O7)
-    PENT(d.R3, d.O7, d.G4, d.G2, d.O8)
-    PENT(d.R4, d.O2, d.G4, d.G2, d.O4)
+    if((t>=15) && (t<=165)){PENT(d.O1, d.G1, d.G3, d.O6, d.R1)}
+    if((t>=195) && (t<=345)){PENT(d.O3, d.G1, d.G3, d.O5, d.R2)}
+    if((t>=99) && (t<=261)){PENT(d.O5, d.G3, d.O6, d.B3, d.B4)}
+    if((t>=279) || (t<=81)){PENT(d.O1, d.G1, d.O3, d.B2, d.B1)}
+    if((t>220) || (t<24)){PENT(d.O3, d.R2, d.R4, d.O4, d.B2)}
+    if((t>336) || (t<139)){PENT(d.O1, d.R1, d.R3, d.O8, d.B1)}
+    if((t>40) && (t<203)){PENT(d.O6, d.R1, d.R3, d.O7, d.B3)}
+    if((t>156) && (t<320)){PENT(d.O5, d.B4, d.O2, d.R4, d.R2)}
+    if((t>=279) || (t<=81)){PENT(d.B2, d.B1, d.O8, d.G2, d.O4)}
+    if((t>=99) && (t<=261)){PENT(d.B3, d.B4, d.O2, d.G4, d.O7)}
+    if((t>=15) && (t<=165)){PENT(d.R3, d.O7, d.G4, d.G2, d.O8)}
+    if((t>=195) && (t<=345)){PENT(d.R4, d.O2, d.G4, d.G2, d.O4)}
 
     #undef PENT
 }
@@ -401,10 +402,11 @@ int main(void) {
         // Draw into back_buffer
         clear(BLACK);
         updateDodecahedron();
-
+		theta = (theta + 1) % 360;
+		
         // Swap — shows completed frame, frees other buffer for drawing
         wait_for_vsync();
-        theta = (theta + 1) % 360;
+        
 
         // Flip which buffer we draw to next
         if (back_buffer == Buffer1) {
