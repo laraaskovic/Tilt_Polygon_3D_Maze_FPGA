@@ -274,7 +274,7 @@ struct TwoDPoint rotatePoint(int x, int y, int z) {
     p.x = (-((x*cos_table[t])-(z*sin_table[t]))*d)  /  ((x*(sin_table[t]))+(z*(cos_table[t])-d))  +160;
     p.y = (-(y)*d)  /  ((x*(sin_table[t]))+(z*(cos_table[t])-d))  +120;
 
-    plot_pixel(p.x, p.y, WHITE);
+    //plot_pixel(p.x, p.y, WHITE);
 
     return p;
 }
