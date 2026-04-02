@@ -109,13 +109,15 @@ int timer_tick_count = 0;
 
 // pixel buffer — 512 wide because DE1-SoC requires power-of-2 row stride
 short int Buffer1[240][512];
+short int Buffer2[240][512];
+short int (*back_buffer)[512] = Buffer1;
 
 // ────────────────────────────────────────────────────────────────────────────
 // pixel drawing primitives
 // ────────────────────────────────────────────────────────────────────────────
 void plot_pixel(int x, int y, short int color) {
     if (x<0||x>319||y<0||y>239) return;
-    Buffer1[y][x] = color;
+    back_buffer[y][x] = color;   // was: Buffer1[y][x]
 }
 
 int abs(int x) { return x > 0 ? x : -x; }
@@ -387,20 +389,31 @@ void wait_for_vsync(void) {
 // ────────────────────────────────────────────────────────────────────────────
 
 int main(void) {
-	
-	volatile int *ctrl = (int *)0xFF203020;
+    volatile int *ctrl = (int *)0xFF203020;
 
-    // point both buffers at Buffer1 (single buffering for now)
-    *(ctrl + 1) = (int)Buffer1;   // back buffer address
-    *ctrl = 1;                     // swap once to make it front
-    while ((*(ctrl + 3) & 0x01) != 0);  // wait for swap
-    *(ctrl + 1) = (int)Buffer1;   // point back buffer here too
-	
+    // Set up: front = Buffer2, back = Buffer1
+    *(ctrl + 1) = (int)Buffer2;
+    *ctrl = 1;
+    while ((*(ctrl + 3) & 0x01) != 0);
+    *(ctrl + 1) = (int)Buffer1;
+
     while (1) {
+        // Draw into back_buffer
         clear(BLACK);
-        struct Dodecahedron d = updateDodecahedron();
+        updateDodecahedron();
+
+        // Swap — shows completed frame, frees other buffer for drawing
         wait_for_vsync();
         theta = (theta + 1) % 360;
+
+        // Flip which buffer we draw to next
+        if (back_buffer == Buffer1) {
+            back_buffer = Buffer2;
+            *(ctrl + 1) = (int)Buffer2;
+        } else {
+            back_buffer = Buffer1;
+            *(ctrl + 1) = (int)Buffer1;
+        }
     }
     return 0;
 }
