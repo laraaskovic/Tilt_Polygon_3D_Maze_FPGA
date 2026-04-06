@@ -2179,6 +2179,16 @@ int main(void) {
             if (b == 0xF0) { skip=1; continue; }    // next byte is a key release
             if (b == 0xE0) { e0=1;   continue; }    // next byte is extended key			
 			
+            if(b==0x29) {
+                if(gameState==0) {
+                    gameState = 1;
+                }else if (gameState == 2) {
+                    gameState = 0;
+                } if (gameState ==3) {
+                    gameState = 0;
+                }
+            }
+
 			// MODE SWITCH KEYS (check first before player movement)
             if (!e0) {
                 if (b == 0x45) {  // '0' — free/player only
@@ -2200,7 +2210,7 @@ int main(void) {
                             draw_ball(agent_px, agent_py, COL_AGENT, prev_tilt);
                         draw_ball(px, py, COL_PLAYER, prev_tilt);
                     }
-                    if(gameState ==0) {gameState =1;}
+                    if(gameState ==0) {gameState =2;}
                 }
                 else if (b == 0x1E) {  // '2' — DFS
                     if (gameState==1){
