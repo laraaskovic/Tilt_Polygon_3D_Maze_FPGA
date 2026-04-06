@@ -315,7 +315,7 @@ int maps[NUM_MAPS][ROWS][COLS] = {
 void plot_pixel(int x, int y, short int color) {
     if (x<0||x>319||y<0||y>239) return;
     back_buffer[y][x] = color;
-    update_audio();
+    //update_audio();
 }
 
 void draw_rect(int x, int y, int w, int h, short int color) {
@@ -349,7 +349,7 @@ int abs(int x) { return x > 0 ? x : -x; }
 void swap(int *x, int *y) { int t = *x; *x = *y; *y = t; }
 
 void line(int x0, int y0, int x1, int y1, short color) {
-    update_audio();
+    //update_audio();
     int steep = abs(y1-y0) > abs(x1-x0);
     if (steep)  { swap(&x0,&y0); swap(&x1,&y1); }
     if (x0>x1)  { swap(&x0,&x1); swap(&y0,&y1); }
@@ -1919,6 +1919,7 @@ int main(void) {
     while (1) {
         
         update_audio();
+        prev_tilt = 'n';
         //drawings
         draw_map(cm, prev_tilt);
         draw_target(target_col, target_row, COL_TARGET);
@@ -1930,8 +1931,6 @@ int main(void) {
 
         //Things that happen once per second
         if (timer_hw_tick()) {
-            update_audio();
-
             //Tickdown the timer
             round_timer_sec--;
             if (round_timer_sec <= 0) {
@@ -2098,7 +2097,7 @@ int main(void) {
         }
 		
         // ── ACCELEROMETER INPUT ───────────────────────────────────────────
-        if (1) {
+        if (0) {
             unsigned char abuf[6];
             mpu_read_regs(gpio, REG_ACCEL_X_H, abuf, 6);
             short ax = -(short)((abuf[0] << 8) | abuf[1]);
