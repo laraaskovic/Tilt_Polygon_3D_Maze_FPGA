@@ -1968,16 +1968,6 @@ int main(void) {
                 else if (action == 2) nac--;
                 else if (action == 3) nac++;
 
-
-                if (reached_target(agent_px, agent_py, target_col, target_row)) {
-                    computerScore++;
-                    trigger_clip(snd_target, snd_target_len);  
-
-                    reset_round(&cm, &px, &py);
-                    dfs_index = dfs_len = 0; // reset DFS state
-                    continue;
-                }
-
                 if (nac >= 0 && nac < COLS && nar >= 0 && nar < ROWS && maps[cm][nar][nac] == 0) {
                     agent_px = col_to_px(nac);
                     agent_py = row_to_py(nar);
@@ -1986,78 +1976,87 @@ int main(void) {
 
         }
 
-         int nx = px, ny = py;
+        int nx = px, ny = py;
 
-            if(ballSpeed<7)
-                ballSpeed++;
+        if(ballSpeed<7)
+            ballSpeed++;
+            
+        if(prev_tilt == 'u'){
+            ny-=ballSpeed;
+        } 
+        else if(prev_tilt == 'd') {
+            ny+=ballSpeed;
+        } 
+        else if(prev_tilt == 'r'){
+            nx+=ballSpeed;
+        } 
+        else if(prev_tilt == 'l'){
+            nx-=ballSpeed;
+        }
                 
-            if(prev_tilt == 'u'){
-                ny-=ballSpeed;
-            } 
-            else if(prev_tilt == 'd') {
-                ny+=ballSpeed;
-            } 
-            else if(prev_tilt == 'r'){
-                nx+=ballSpeed;
-            } 
-            else if(prev_tilt == 'l'){
-                nx-=ballSpeed;
-            }
-                    
-			
-			
-            if (!hits_wall(cm, nx, ny)) {   
-                px = nx; 
-                py = ny;
-            } 
-			
-            else {
-                //trigger_sound(SOUND_WALL);
-				if (!justBounced){
-					ballSpeed *= -1;
-					justBounced=1;
-				}
-            }
-
-            // Portal spawn/despawn timer 
-            portal_spawn_timer++;
-            if (!portal.active && portal_spawn_timer >= PORTAL_SPAWN_INTERVAL) {
-                portal_spawn_timer = 0;
-                spawn_portal(cm, px, py);
-            }
-            if (portal.active) {
-                portal.life--;
-                if (portal.life <= 0) {
-                    erase_portals();
-                    portal.active = 0;
-                    portal_spawn_timer = 0;
-                }
-            }
-
-            // Portal teleport check (after moving ball) ────────────────────
-            int dest_col, dest_row;
-            if (check_portal(px, py, &dest_col, &dest_row)) {
         
+        
+        if (!hits_wall(cm, nx, ny)) {   
+            px = nx; 
+            py = ny;
+        } 
+        
+        else {
+            //trigger_sound(SOUND_WALL);
+            if (!justBounced){
+                ballSpeed *= -1;
+                justBounced=1;
+            }
+        }
+
+        // Portal spawn/despawn timer 
+        portal_spawn_timer++;
+        if (!portal.active && portal_spawn_timer >= PORTAL_SPAWN_INTERVAL) {
+            portal_spawn_timer = 0;
+            spawn_portal(cm, px, py);
+        }
+        if (portal.active) {
+            portal.life--;
+            if (portal.life <= 0) {
+                erase_portals();
                 portal.active = 0;
                 portal_spawn_timer = 0;
-                // land the ball in the center of the destination tile
-                px = col_to_px(dest_col);
-                py = row_to_py(dest_row);
-                ballSpeed = 0;   // brief pause after warp feels good
+            }
+        }
+
+        // Portal teleport check (after moving ball) ────────────────────
+        int dest_col, dest_row;
+        if (check_portal(px, py, &dest_col, &dest_row)) {
     
-            }
+            portal.active = 0;
+            portal_spawn_timer = 0;
+            // land the ball in the center of the destination tile
+            px = col_to_px(dest_col);
+            py = row_to_py(dest_row);
+            ballSpeed = 0;   // brief pause after warp feels good
 
-            if (reached_target(px, py, target_col, target_row)) {
-                playerScore++;
-                trigger_clip(snd_target, snd_target_len);
+        }
 
-                ballSpeed=0;
-                reset_round(&cm, &px, &py);
-                agent_tick = 0;
-                prev_tilt = 'n';
-                dfs_index = dfs_len = 0;
+        if (reached_target(px, py, target_col, target_row)) {
+            playerScore++;
+            trigger_clip(snd_target, snd_target_len);
 
-            }
+            ballSpeed=0;
+            reset_round(&cm, &px, &py);
+            agent_tick = 0;
+            prev_tilt = 'n';
+            dfs_index = dfs_len = 0;
+
+        }
+
+        if (reached_target(agent_px, agent_py, target_col, target_row)) {
+            computerScore++;
+            trigger_clip(snd_target, snd_target_len);  
+
+            reset_round(&cm, &px, &py);
+            dfs_index = dfs_len = 0; // reset DFS state
+            continue;
+        }
             
         // ── PLAYER PHYSICS ────────────────────────────────────────────────
         phys_tick++;
@@ -2085,7 +2084,7 @@ int main(void) {
         }
 		
         // ── ACCELEROMETER INPUT ───────────────────────────────────────────
-        if (timer_hw_tick()) {
+        if (1) {
             unsigned char abuf[6];
             mpu_read_regs(gpio, REG_ACCEL_X_H, abuf, 6);
             short ax = -(short)((abuf[0] << 8) | abuf[1]);
