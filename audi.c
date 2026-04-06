@@ -5,7 +5,6 @@
 #include "snd_target.h"
 #include "snd_teleport.h"
 #include "teleport_frames.h"
-#include "dodecahedron.h"
 
 // forward declarations
 int  col_to_px(int col);
