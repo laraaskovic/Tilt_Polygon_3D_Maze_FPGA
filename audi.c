@@ -1902,6 +1902,8 @@ int main(void) {
 
     while (1) {
         
+        update_audio();
+        
         //drawings
         draw_timer(round_timer_sec);
         plot_score(playerScore, computerScore);
