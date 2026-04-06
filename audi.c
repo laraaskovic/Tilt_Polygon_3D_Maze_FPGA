@@ -327,6 +327,7 @@ void draw_rect(int x, int y, int w, int h, short int color) {
 void draw_circle(int cx, int cy, int r, short int color) {
     int x = 0, y = r, d = 1 - r;
     while (x <= y) {
+        update_audio();
         plot_pixel(cx+x,cy+y,color); plot_pixel(cx-x,cy+y,color);
         plot_pixel(cx+x,cy-y,color); plot_pixel(cx-x,cy-y,color);
         plot_pixel(cx+y,cy+x,color); plot_pixel(cx-y,cy+x,color);
@@ -1471,6 +1472,7 @@ int dfs_compute(int m, int sc, int sr, int tc, int tr, int *out) {
     visited[sr][sc] = 1;
 
     while (top >= 0) {
+        update_audio();
         int c = stack_c[top];
         int r = stack_r[top];
 
