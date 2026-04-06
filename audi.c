@@ -1553,17 +1553,21 @@ int hits_wall(int m, int px, int py) {
     int cy = projectPoint(px, py, pz).y;
 
     //This helps prevent the ball from getting stuck when tilt changes
-    int xdamp = 0;
-    int ydamp = 0;
-    if ((prev_tilt == 'r')||(prev_tilt == 'l')) ydamp+=DAMP_VALUE;
-    if ((prev_tilt == 'u')||(prev_tilt == 'd')) xdamp+=DAMP_VALUE;
+    int rdamp = DAMP_VALUE;
+    int udamp = DAMP_VALUE;
+    int ddamp = DAMP_VALUE;
+    int ldamp = DAMP_VALUE;
+    if (prev_tilt == 'r'){rdamp = 0;}
+    else if (prev_tilt == 'l') {ldamp = 0;}
+    else if (prev_tilt == 'u') {udamp = 0;}
+    else if (prev_tilt == 's') {ddamp = 0;}
 	
 	//obtain 3d bounds
 	int r = BALL_SIZE/2+1;
-	int minBallX = cx-(r-xdamp);
-	int minBallY = cy-(r-ydamp);
-	int maxBallX = cx+(r-xdamp);
-	int maxBallY = cy+(r-ydamp);
+	int minBallX = cx-(r-ldamp);
+	int minBallY = cy-(r-ddamp);
+	int maxBallX = cx+(r-rdamp);
+	int maxBallY = cy+(r-udamp);
 	
 	//for each of the 9 surrounding tiles:
 	for (int i = -1; i <=1; i++){
