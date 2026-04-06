@@ -1923,6 +1923,7 @@ int main(void) {
 
         //Things that happen once per second
         if (timer_hw_tick()) {
+            update_audio();
 
             //Tickdown the timer
             round_timer_sec--;
@@ -2064,6 +2065,7 @@ int main(void) {
         }
             
         // ── PLAYER PHYSICS ────────────────────────────────────────────────
+        update_audio();
         phys_tick++;
 		if(justBounced){
 			cyclesSinceBounce++;
@@ -2133,6 +2135,7 @@ int main(void) {
         int b;
 
         while ((b = ps2_read()) >= 0) {
+            update_audio();
             if (skip) { skip=0; e0=0; continue; }   // discard key-release scan code
             if (b == 0xF0) { skip=1; continue; }    // next byte is a key release
             if (b == 0xE0) { e0=1;   continue; }    // next byte is extended key			
@@ -2239,7 +2242,7 @@ int main(void) {
 
         *(pixel_ctrl + 1) = (int)back_buffer;
         *pixel_ctrl = 1;
-        //wait_for_vsync();
+        wait_for_vsync();
         back_buffer = (back_buffer == Buffer1) ? Buffer2 : Buffer1;
     }
     return 0;
