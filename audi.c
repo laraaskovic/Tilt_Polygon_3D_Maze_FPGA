@@ -364,9 +364,9 @@ void line(int x0, int y0, int x1, int y1, short color) {
 }
 
 void clear(short color) {
-	for(int x = 0; x < 320; x++){
+	for(int y = 0; y < 230; y++){
         update_audio();
-        for(int y = 0; y < 240; y++){
+        for(int x = 0; x < 320; x++){
             plot_pixel(x,y,color);
         }
     }
