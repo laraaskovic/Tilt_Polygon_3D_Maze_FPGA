@@ -1924,6 +1924,7 @@ int main(void) {
         if (!sixtyFrameCounter) {
 
             //Tickdown the timer
+            round_timer_sec--;
             if (round_timer_sec <= 0) {
                 trigger_clip(snd_game_over, snd_game_over_len);
                 
@@ -1980,13 +1981,18 @@ int main(void) {
                     dfs_index = dfs_len = 0; // reset DFS state
                     continue;
                 }
+
+                if (nac >= 0 && nac < COLS && nar >= 0 && nar < ROWS && maps[cm][nar][nac] == 0) {
+                    agent_px = col_to_px(nac);
+                    agent_py = row_to_py(nar);
+                }
             }
 
         }
 
          int nx = px, ny = py;
 
-            if(ballSpeed<3)
+            if(ballSpeed<7)
                 ballSpeed++;
                 
             if(prev_tilt == 'u'){
@@ -2106,6 +2112,10 @@ int main(void) {
                     else        { new_tilt = 'u'; ny-=5; }
                 }
 
+                if (new_tilt != prev_tilt) {
+                    prev_tilt = new_tilt;
+                    ballSpeed = 0;
+                }
 
                 // Move ball one tile if not hitting a wall
                 if (!hits_wall(cm, nx, ny)) {
