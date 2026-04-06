@@ -133,14 +133,15 @@ void update_audio(void) {
         return;
     }
     int fifospace = *(audio_ptr + 1);
-    int wslc = (fifospace >> 24) & 0xFF;
-    if (wslc == 0) return;
+    int wslc = (fifospace >> 24) & 0xFF;  // write space in left channel FIFO
 
-    int sample = clip_data[clip_pos++];
-    *(audio_ptr + 2) = sample;
-    *(audio_ptr + 3) = sample;
+    while (wslc > 0 && clip_pos < clip_len) {
+        int sample = clip_data[clip_pos++];
+        *(audio_ptr + 2) = sample;
+        *(audio_ptr + 3) = sample;
+        wslc--;
+    }
 }
-
 
 
 // ── GPIO / I2C for accelerometer ──────────────────────────────────────────
@@ -364,8 +365,8 @@ void line(int x0, int y0, int x1, int y1, short color) {
 
 void clear(short color) {
 	for(int x = 0; x < 320; x++){
+        update_audio();
         for(int y = 0; y < 240; y++){
-            update_audio();
             plot_pixel(x,y,color);
         }
     }
@@ -1815,8 +1816,6 @@ void show_game_over_screen(void) {
 void draw_map(int m, char tilt) {
 	
     clear(BLACK);
-	
-            
 	plot_logo();
 	plot_scoreboard();
 	plot_score(playerScore, computerScore);
@@ -1908,11 +1907,6 @@ int main(void) {
         update_audio();
         
         //drawings
-        draw_timer(round_timer_sec);
-        plot_score(playerScore, computerScore);
-        plot_scoreboard();
-        plot_logo();
-
         draw_map(cm, prev_tilt);
         draw_target(target_col, target_row, COL_TARGET);
         draw_ball(px, py, COL_PLAYER, prev_tilt);
