@@ -218,10 +218,6 @@ void mpu_read_regs(GPIO_t *g, unsigned char reg, unsigned char *buf, int len) {
     i2c_stop(g);
 }
 
-
-
-
-
 // 3D rendering constants
 #define CAMERA_DISTANCE 135
 #define HALF_BOX_WIDTH  18
@@ -319,6 +315,7 @@ int maps[NUM_MAPS][ROWS][COLS] = {
 void plot_pixel(int x, int y, short int color) {
     if (x<0||x>319||y<0||y>239) return;
     back_buffer[y][x] = color;
+    update_audio();
 }
 
 void draw_rect(int x, int y, int w, int h, short int color) {
@@ -1309,8 +1306,11 @@ void draw_portal(int col, int row, short color) {
     if (color == BLACK) {
         int r = PORTAL_RADIUS + 2;
         for (int dy = -r; dy <= r; dy++)
-            for (int dx = -r; dx <= r; dx++)
+            for (int dx = -r; dx <= r; dx++){
                 plot_pixel(cx + dx, cy + dy, BLACK);
+            }
+                
+
         return;
     }
 
@@ -1483,6 +1483,7 @@ int dfs_compute(int m, int sc, int sr, int tc, int tr, int *out) {
         int found = 0;
 
         for (int a = 0; a < 4; a++) {
+            update_audio();
             int nc = c, nr = r;
 
             if (a==0) nr--;
@@ -1557,6 +1558,7 @@ int hits_wall(int m, int px, int py) {
 	//for each of the 9 surrounding tiles:
 	for (int i = -1; i <=1; i++){
 		for (int j = -1; j<=1; j++){
+            update_audio();
 			
 			//check if its an obstacle 
 			if(maps[m][row+i][col+j]){
@@ -1576,6 +1578,7 @@ int hits_wall(int m, int px, int py) {
 				struct TwoDPoint pts[8] = {b.ftl, b.ftr, b.fbl, b.fbr, b.btl, b.btr, b.bbl, b.bbr};
 
 				for (int k = 1; k < 8; k++) {
+                    update_audio();
     				if (pts[k].x < minX) minX = pts[k].x;
     				if (pts[k].x > maxX) maxX = pts[k].x;
     				if (pts[k].y < minY) minY = pts[k].y;
@@ -1674,13 +1677,15 @@ void draw_ring(int radius, short color) {
 
 void draw_ring_band(int inner, int outer, short color) {
     int cx = 160, cy = 120;
-    for (int y = 0; y < 240; y++)
+    for (int y = 0; y < 240; y++){
+        update_audio();
         for (int x = 0; x < 320; x++) {
             int dx = x - cx, dy = y - cy;
             int d2 = dx*dx + dy*dy;
             if (d2 <= outer*outer && d2 >= inner*inner)
                 plot_pixel(x, y, color);
         }
+    }
 }
 
 void draw_go_letter(int letter, int tx, int ty, short color) {
