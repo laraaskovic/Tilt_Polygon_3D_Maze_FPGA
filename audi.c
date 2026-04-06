@@ -163,7 +163,7 @@ typedef struct {
 static int accel_cooldown = 0;
 
 
-void i2c_delay(void) { volatile int i; for (i = 0; i < 2000; i++); }
+void i2c_delay(void) { volatile int i; for (i = 0; i < 2000; i++) update_audio(); }
 void sda_high(GPIO_t *g) { g->DDR  &= ~(1 << SDA_PIN); }
 void sda_low (GPIO_t *g) { g->DATA &= ~(1 << SDA_PIN); g->DDR |= (1 << SDA_PIN); }
 int  sda_read(GPIO_t *g) { g->DDR  &= ~(1 << SDA_PIN); i2c_delay(); return (g->DATA >> SDA_PIN) & 1; }
@@ -1905,6 +1905,7 @@ int main(void) {
     int phys_tick  = 0;
 
 	int ballSpeed = 0;
+    prev_tilt = 'n';
 
     timer_hw_init();
 
@@ -1919,7 +1920,6 @@ int main(void) {
     while (1) {
         
         update_audio();
-        prev_tilt = 'n';
         //drawings
         draw_map(cm, prev_tilt);
         draw_target(target_col, target_row, COL_TARGET);
@@ -2097,7 +2097,7 @@ int main(void) {
         }
 		
         // ── ACCELEROMETER INPUT ───────────────────────────────────────────
-        if (0) {
+        if (1) {
             unsigned char abuf[6];
             mpu_read_regs(gpio, REG_ACCEL_X_H, abuf, 6);
             short ax = -(short)((abuf[0] << 8) | abuf[1]);
