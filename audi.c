@@ -1766,7 +1766,7 @@ void show_game_over_screen(void) {
     {int k = 0;
         while (k<60) {
             wait_for_vsync();
-            up
+            update_audio();
             k++;
         }
     
