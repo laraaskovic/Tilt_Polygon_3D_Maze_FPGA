@@ -1156,7 +1156,7 @@ void draw_wall_tile(int col, int row, char tilt) {
 void draw_timer(int seconds) {
     // erase old timer area first
    // draw_rect(TIMER_X, TIMER_Y, 16, 12, BLACK);
-   seconds = seconds%2;
+   seconds = seconds%30;
 
     short colors[] = {BLACK, WHITE};
     int d1 = seconds / 10;   // tens digit
