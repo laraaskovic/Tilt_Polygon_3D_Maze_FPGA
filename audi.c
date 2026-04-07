@@ -43,6 +43,7 @@ void compute_dfs_path(int m, int ac, int ar);
 #define YELLOW 0xFFE0
 #define CYAN 0x07FF
 #define ORANGE 0xFD20
+#define PURPLE 0xF81F
 
 #define COL_BG 0x0000   // black background
 
@@ -75,13 +76,19 @@ int dfs_path[MAX_PATH];
 int dfs_len = 0;
 int dfs_index = 0;
 
+//State 0: Main Menu
+//State 1: Game
+//State 2: Pause
+//State 3: How to play
+//State 4: Game Over
+int gameState = 0;
 
 
 // hardware interval timer at 0xFF202000
 // runs at 100MHz so 100,000,000 ticks = 1 second
 // we set it to fire every 1 second directly
 #define TIMER_BASE       0xFF202000
-#define TIMER_TICKS_1SEC 100000000   // 100MHz * 1 second
+#define TIMER_TICKS_1SEC 50000000   // 100MHz * 1 second
 
 void timer_hw_init(void) {
     volatile int *timer = (int *) TIMER_BASE;
@@ -102,14 +109,14 @@ int timer_hw_tick(void) {
 
 
 // round timer globals — must be declared before draw_map, reset_round, and main
-#define ROUND_TIME_SEC  30
+#define ROUND_TIME_SEC  60
 int round_timer_sec  = ROUND_TIME_SEC;
 
 // only needed if you kept the software timer fallback, remove if using hardware timer
 int timer_tick_count = 0;
 
 // position for timer display on screen — top right area
-#define TIMER_X  280
+#define TIMER_X  290
 #define TIMER_Y   20
 
 
@@ -525,8 +532,100 @@ void plot_scoreboard() {
 }
 
 
+#define PAUSE_PX_SIZE 2
+#define PAUSE_X 140
+#define PAUSE_Y 80
+
+int pause[65][29] = {
+    {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,2,2,2,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,2,2,2,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,2,2,2,2,2,2,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,2,2,2,2,2,2,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,2,2,2,2,2,2,2,2,2,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,2,2,2,2,2,2,2,2,2,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,0,0,0,0,0,0,0,0,0,0,0},
+    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,0,0,0,0,0,0,0,0,0,0},
+    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,0,0,0,0,0,0,0,0},
+    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,0,0,0,0,0,0,0},
+    {1,2,2,2,1,1,2,2,1,1,1,1,1,2,2,2,1,1,2,2,2,2,1,1,0,0,0,0,0},
+    {1,2,2,2,1,2,2,2,1,1,1,1,1,1,2,2,2,1,2,2,2,2,2,2,1,0,0,0,0},
+    {1,2,2,2,1,2,2,2,1,1,2,2,1,1,2,2,2,1,2,2,2,2,2,2,2,1,1,0,0},
+    {1,2,2,2,1,2,2,2,1,1,2,2,1,1,2,2,2,1,2,2,2,2,2,2,2,2,2,1,0},
+    {1,2,2,2,1,2,2,2,1,1,1,1,1,1,2,2,2,1,2,2,2,2,2,2,2,2,2,2,1},
+    {1,2,2,2,1,2,2,2,1,1,1,1,1,2,2,2,2,1,2,2,2,2,2,2,2,2,2,1,0},
+    {1,2,2,2,1,2,2,2,1,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,2,1,1,0,0},
+    {1,2,2,2,1,2,2,2,1,1,2,2,2,2,2,2,2,1,2,2,2,2,2,2,1,0,0,0,0},
+    {1,2,2,2,1,1,2,2,1,1,2,2,2,2,2,2,1,1,2,2,2,2,1,1,0,0,0,0,0},
+    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,0,0,0,0,0,0,0},
+    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,0,0,0,0,0,0,0,0},
+    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,0,0,0,0,0,0,0,0,0,0},
+    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,0,0,0,0,0,0,0,0,0,0,0},
+    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,2,2,2,2,2,2,2,2,2,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,2,2,2,2,2,2,2,2,2,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,2,2,2,2,2,2,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,2,2,2,2,2,2,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,2,2,2,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,2,2,2,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+	{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+	{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+	{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+	{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+	{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+	{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+	{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+	{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+	{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+	{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+	{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+	{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+	{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+	{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+	{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1},
+    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1},
+    {1,2,3,3,2,2,2,2,2,3,3,2,3,3,3,2,3,2,3,2,3,3,3,2,3,3,3,2,1},
+    {1,2,3,2,2,2,2,2,2,2,3,2,3,2,2,2,3,2,3,2,2,3,2,2,2,3,2,2,1},
+    {1,2,3,2,3,2,2,2,3,2,3,2,3,3,3,2,2,3,2,2,2,3,2,2,2,3,2,2,1},
+    {1,2,3,2,3,3,3,3,3,2,3,2,3,2,2,2,2,3,2,2,2,3,2,2,2,3,2,2,1},
+    {1,2,3,2,2,2,2,2,2,2,3,2,3,2,2,2,3,2,3,2,2,3,2,2,2,3,2,2,1},
+    {1,2,3,3,2,2,2,2,2,3,3,2,3,3,3,2,3,2,3,2,3,3,3,2,2,3,2,2,1},
+    {1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1},
+    {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}
+};
+
+void plot_pause() {
+	short curr_col; 
+	int draw_x;
+	int draw_y;
+	short colors[] = {CYAN, WHITE, GREEN, BLACK};
+	for(int x = 0; x < 29; x++){
+        for(int y = 0; y < 65; y++){
+			curr_col = colors[pause[y][x]];            
+			for(int dy = 0; dy < PAUSE_PX_SIZE; dy++){
+                for(int sx = 0; sx < PAUSE_PX_SIZE; sx++){
+					if (curr_col==CYAN) continue;
+					draw_x = x * PAUSE_PX_SIZE + sx + PAUSE_X;
+					draw_y = y * PAUSE_PX_SIZE + dy + PAUSE_Y;
+                    plot_pixel(draw_x, draw_y, curr_col);
+                }
+            }
+        }
+    }
+}
+
 #define LOGO_PX_SIZE 1
-#define LOGO_X 280
+#define LOGO_X 285
 #define LOGO_Y 195
 	
 int logo[28][34] = {
@@ -727,6 +826,151 @@ void plot_diff() {
 }
 
 
+#define GAME_OVER_PX_SIZE 3
+#define GAME_OVER_X 95
+#define GAME_OVER_Y 50
+
+
+int game_over[43][42] = {
+    {0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,1,1,1,1,1,1,1,0,0,0,0,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,1,1,0,0,0,0,0,0,0,0,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,1,1,0,0,0,0,0,0,0,0,2,2,2,2,2,2,2,2,2,0,0,3,3,3,0,0,0,3,3,3,0,0,0,0,0,0,0,0,0,0,0},
+    {1,1,1,0,0,0,0,0,0,0,0,2,2,2,0,0,0,2,2,2,0,0,3,3,3,3,0,3,3,3,3,0,0,0,0,0,0,0,0,0,0,0},
+    {1,1,1,0,0,1,1,1,1,0,0,2,2,2,0,0,0,2,2,2,0,0,3,3,3,3,3,3,3,3,3,0,0,4,4,4,4,4,4,4,4,4},
+    {1,1,1,0,0,0,1,1,1,0,0,2,2,2,0,0,0,2,2,2,0,0,3,3,3,3,3,3,3,3,3,0,0,4,4,4,4,4,4,4,4,4},
+    {1,1,1,0,0,0,1,1,1,0,0,2,2,2,2,2,2,2,2,2,0,0,3,3,3,3,3,3,3,3,3,0,0,4,4,4,4,4,4,4,4,4},
+    {1,1,1,1,1,1,1,1,1,0,0,2,2,2,2,2,2,2,2,2,0,0,3,3,3,0,3,0,3,3,3,0,0,4,4,4,0,0,0,0,0,0},
+    {1,1,1,1,1,1,1,1,1,0,0,2,2,2,0,0,0,2,2,2,0,0,3,3,3,0,0,0,3,3,3,0,0,4,4,4,0,0,0,0,0,0},
+    {0,1,1,1,1,1,1,1,0,0,0,2,2,2,0,0,0,2,2,2,0,0,3,3,3,0,0,0,3,3,3,0,0,4,4,4,4,4,4,4,4,0},
+    {0,0,0,0,0,0,0,0,0,0,0,2,2,2,0,0,0,2,2,2,0,0,3,3,3,0,0,0,3,3,3,0,0,4,4,4,4,4,4,4,4,0},
+    {0,0,0,0,0,0,0,0,0,0,0,2,2,2,0,0,0,2,2,2,0,0,3,3,3,0,0,0,3,3,3,0,0,4,4,4,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,3,3,0,0,0,3,3,3,0,0,4,4,4,0,0,0,0,0,0},
+    {0,5,5,5,5,5,5,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,3,3,0,0,0,3,3,3,0,0,4,4,4,4,4,4,4,4,4},
+    {5,5,5,5,5,5,5,5,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,4,4,4,4,4,4,4,4},
+    {5,5,5,5,5,5,5,5,5,0,0,1,1,1,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,4,4,4,4,4,4,4,4,4},
+    {5,5,5,0,0,0,5,5,5,0,0,1,1,1,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {5,5,5,0,0,0,5,5,5,0,0,1,1,1,0,0,0,1,1,1,0,0,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0,0,0},
+    {5,5,5,0,0,0,5,5,5,0,0,1,1,1,1,0,1,1,1,1,0,0,2,2,2,2,2,2,2,2,2,0,0,0,0,0,0,0,0,0,0,0},
+    {5,5,5,0,0,0,5,5,5,0,0,1,1,1,1,0,1,1,1,1,0,0,2,2,2,2,2,2,2,2,2,0,0,3,3,3,3,3,3,3,3,0},
+    {5,5,5,0,0,0,5,5,5,0,0,0,1,1,1,0,1,1,1,0,0,0,2,2,2,0,0,0,0,0,0,0,0,3,3,3,3,3,3,3,3,3},
+    {5,5,5,0,0,0,5,5,5,0,0,0,1,1,1,0,1,1,1,0,0,0,2,2,2,0,0,0,0,0,0,0,0,3,3,3,3,3,3,3,3,3},
+    {5,5,5,5,5,5,5,5,5,0,0,0,0,1,1,1,1,1,0,0,0,0,2,2,2,2,2,2,2,2,0,0,0,3,3,3,0,0,0,3,3,3},
+    {5,5,5,5,5,5,5,5,5,0,0,0,0,1,1,1,1,1,0,0,0,0,2,2,2,2,2,2,2,2,0,0,0,3,3,3,0,0,0,3,3,3},
+    {0,5,5,5,5,5,5,5,0,0,0,0,0,1,1,1,1,1,0,0,0,0,2,2,2,0,0,0,0,0,0,0,0,3,3,3,3,3,3,3,3,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,0,0,2,2,2,0,0,0,0,0,0,0,0,3,3,3,3,3,3,0,0,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,2,2,2,2,2,2,2,2,2,0,0,3,3,3,3,3,3,3,0,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,2,2,2,2,2,2,0,0,3,3,3,0,3,3,3,3,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,2,2,2,2,2,2,0,0,3,3,3,0,0,3,3,3,3},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,3,3,0,0,0,3,3,3},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,3,3,0,0,0,3,3,3},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,6,6,6,0,0,0,0,0,0,0,0,6,6,6,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,6,0,0,0,0,0,0,0,0,0,0,0,0,6,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,6,0,6,6,0,0,0,0,0,0,6,6,0,6,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,6,0,6,6,0,0,0,0,0,0,6,6,0,6,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,6,0,6,6,6,6,6,6,6,6,6,6,0,6,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,6,0,6,6,6,6,6,6,6,6,6,6,0,6,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,6,0,0,0,0,0,0,0,0,0,0,0,0,6,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,6,6,6,0,0,0,0,0,0,0,0,6,6,6,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
+};
+
+void plot_game_over() {
+    short colors[] = {BLACK, CYAN, PURPLE, YELLOW, ORANGE, RED, WHITE};	
+    plot_picture(game_over, 43, 42, GAME_OVER_X, GAME_OVER_Y, GAME_OVER_PX_SIZE, colors);
+}
+
+
+#define LEVEL_DISP_PX_SIZE 1
+#define LEVEL_DISP_X 10
+#define LEVEL_DISP_Y 195
+
+
+int level_display[25][30] = {
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,5,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,5,5,0,0,0,5,5,5,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,5,5,0,0,0,5,5,5,5,0,5,5,0,0,0,5,5,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,5,5,0,0,0,5,5,0,0,0,5,5,0,0,0,5,5,0,5,5,5,5,0,0,0,0,0,0},
+    {0,0,5,5,0,0,0,5,5,5,5,0,5,5,0,0,0,5,5,0,5,5,5,5,0,5,5,0,0,0},
+    {0,0,5,5,0,0,0,5,5,5,5,0,0,5,5,0,5,5,0,0,5,5,0,0,0,5,5,0,0,0},
+    {0,0,5,5,5,5,0,5,5,0,0,0,0,5,5,5,5,5,0,0,5,5,5,5,0,5,5,0,0,0},
+    {0,0,5,5,5,5,0,5,5,5,5,0,0,0,5,5,5,0,0,0,5,5,5,5,0,5,5,0,0,0},
+    {0,0,0,0,0,0,0,5,5,5,5,0,0,0,5,5,5,0,0,0,5,5,0,0,0,5,5,0,0,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,0,0,0,0,5,5,5,5,0,5,5,0,0,0},
+    {0,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,5,5,5,5,0,5,5,5,5,0},
+    {0,1,2,2,2,2,2,2,2,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,5,5,5,5,0},
+    {0,1,2,2,2,2,2,2,2,3,3,3,3,3,3,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0},
+    {0,1,2,2,2,2,2,2,2,3,3,3,3,3,3,4,4,4,4,4,4,4,1,1,1,1,1,1,1,0},
+    {0,1,1,1,1,1,1,1,1,3,3,3,3,3,3,4,4,4,4,4,4,4,6,6,6,6,6,6,6,1},
+    {0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,4,4,4,4,4,4,4,6,6,6,6,6,6,6,1},
+    {0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,6,6,6,6,6,6,6,1},
+    {0,0,0,1,1,0,1,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,0},
+    {0,0,0,1,1,1,1,0,0,0,1,1,1,1,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0},
+    {0,0,0,1,0,1,1,0,0,0,0,0,1,1,0,0,0,0,0,1,1,0,0,0,1,1,1,1,0,0},
+    {0,0,0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,1,1,1,1,0,0,0,0,0,1,1,0,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,1,1,0,0,0,0,0,1,1,1,1,0,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,1,1,0,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,0,0}
+};
+
+void plot_level_disp(int game_mode) {
+	short colors[] = {BLACK, WHITE, BLUE, BLUE, BLUE, RED, BLUE};
+    if (game_mode == -1) {
+        colors[2]=GREEN;
+        colors[3]=BLACK;
+        colors[4]=BLACK;
+        colors[6]=BLACK;
+    } else if (game_mode == 0) {
+        colors[2]=YELLOW;
+        colors[3]=YELLOW;
+        colors[4]=BLACK;
+        colors[6]=BLACK;
+    } else if (game_mode == 1) {
+        colors[2]= ORANGE;
+        colors[3]= ORANGE;
+        colors[4]= ORANGE;
+        colors[6]= BLACK;
+    } else if (game_mode == 2) {
+        colors[2]= RED;
+        colors[3]= RED;
+        colors[4]= RED;
+        colors[6]= RED;
+    } 
+    colors[5] = colors[2];
+	plot_picture(level_display, 25, 30, LEVEL_DISP_X, LEVEL_DISP_Y, LEVEL_DISP_PX_SIZE, colors);
+}
+
+#define PAUSE_BUTTON_PX_SIZE 1
+#define PAUSE_BUTTON_X 0
+#define PAUSE_BUTTON_Y 175
+
+int pause_button[15][48] = {
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,1,1,0,1,1,1,1,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,1,0,0,1,1,1,1,1,0,0,1,0,0,2,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,1,0,0,1,1,0,1,1,0,0,1,0,0,2,2,2,2,2,0,0,2,2,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,1,0,0,1,1,0,1,1,0,0,1,0,0,2,2,0,2,2,0,2,2,2,2,2,0,2,2,0,2,2,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,1,0,0,1,1,1,1,1,0,0,1,0,0,2,2,0,2,2,0,2,2,0,2,2,0,2,2,0,2,2,0,0,2,2,2,2,0,0,0,0,0,0},
+    {0,0,0,0,0,0,1,0,0,1,1,1,1,0,0,0,1,0,0,2,2,2,2,2,0,2,2,0,2,2,0,2,2,0,2,2,0,2,2,2,2,2,0,2,2,2,2,2},
+    {0,0,0,0,0,0,1,0,0,1,1,0,0,0,0,0,1,0,0,2,2,2,2,0,0,2,2,2,2,2,0,2,2,0,2,2,0,2,2,0,0,0,0,2,2,2,2,2},
+    {0,0,0,0,0,0,1,0,0,1,1,0,0,0,0,0,1,0,0,2,2,0,0,0,0,2,2,2,2,2,0,2,2,0,2,2,0,2,2,2,2,0,0,2,2,0,0,0},
+    {0,0,0,0,0,0,1,1,0,1,1,0,0,0,0,1,1,0,0,2,2,0,0,0,0,2,2,0,2,2,0,2,2,0,2,2,0,2,2,2,2,2,0,2,2,2,2,2},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,0,0,0,0,2,2,0,2,2,0,2,2,0,2,2,0,0,0,0,2,2,0,2,2,2,2,2},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,0,2,2,0,2,2,2,2,2,0,0,0,0,2,2,0,2,2,0,0,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,0,0,2,2,2,2,2,0,2,2,0,0,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,2,0,0,2,2,2,2,2},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,2,2,2,2}
+};
+
+void plot_pause_button() {
+	short colors[] = {BLACK, WHITE, GREEN};
+	plot_picture(pause_button, 15, 48, PAUSE_BUTTON_X, PAUSE_BUTTON_Y, PAUSE_BUTTON_PX_SIZE, colors);
+}
+
+
 int num_art[10][10][6] ={
 	{	{0,1,1,1,1,0},
 		{1,1,1,1,1,1},
@@ -922,16 +1166,16 @@ void drawBox(int x, int y, int z, short color) {
     update_audio();
     if (y<0)
         quad(box.btl.x,box.btl.y, box.btr.x,box.btr.y,
-             box.ftr.x,box.ftr.y, box.ftl.x,box.ftl.y, RED);
+             box.ftr.x,box.ftr.y, box.ftl.x,box.ftl.y, BLUE); //bottom 
     if (x>0)
         quad(box.fbl.x,box.fbl.y, box.bbl.x,box.bbl.y,
-             box.btl.x,box.btl.y, box.ftl.x,box.ftl.y, GREEN);
+             box.btl.x,box.btl.y, box.ftl.x,box.ftl.y, RED); //left
     if (x<0)
         quad(box.ftr.x,box.ftr.y, box.btr.x,box.btr.y,
-             box.bbr.x,box.bbr.y, box.fbr.x,box.fbr.y, BLUE);
+             box.bbr.x,box.bbr.y, box.fbr.x,box.fbr.y, RED); //right
     if (y>0)
         quad(box.fbl.x,box.fbl.y, box.fbr.x,box.fbr.y,
-             box.bbr.x,box.bbr.y, box.bbl.x,box.bbl.y, ORANGE);
+             box.bbr.x,box.bbr.y, box.bbl.x,box.bbl.y, BLUE); //up
 
     // top/front face — always white
     update_audio();
@@ -969,7 +1213,8 @@ void draw_wall_tile(int col, int row, char tilt) {
 
 void draw_timer(int seconds) {
     // erase old timer area first
-    draw_rect(TIMER_X, TIMER_Y, 16, 12, BLACK);
+   // draw_rect(TIMER_X, TIMER_Y, 16, 12, BLACK);
+   seconds = seconds/2;
 
     short colors[] = {BLACK, WHITE};
     int d1 = seconds / 10;   // tens digit
@@ -1294,7 +1539,7 @@ typedef struct {
 
 Portal portal = {0};
 int portal_spawn_timer = 0;
-#define PORTAL_SPAWN_INTERVAL 600  // ticks between spawns
+#define PORTAL_SPAWN_INTERVAL 200  // ticks between spawns
 
 
 void draw_portal(int col, int row, short color) {
@@ -1538,6 +1783,8 @@ void set_mode(int new_mode, int *cm, int *px, int *py) {
 // collision / detection
 // ────────────────────────────────────────────────────────────────────────────
 
+#define DAMP_VALUE 2
+
 // check all 4 corners of the 8x8 ball bounding box for wall overlap
 int hits_wall(int m, int px, int py) {
 	
@@ -1549,13 +1796,23 @@ int hits_wall(int m, int px, int py) {
 	int pz = get_z_from_xy(px,py, prev_tilt);
     int cx = projectPoint(px, py, pz).x;
     int cy = projectPoint(px, py, pz).y;
+
+    //This helps prevent the ball from getting stuck when tilt changes
+    int rdamp = DAMP_VALUE;
+    int udamp = DAMP_VALUE;
+    int ddamp = DAMP_VALUE;
+    int ldamp = DAMP_VALUE;
+    if (prev_tilt == 'r'){rdamp = 0; ldamp++;}
+    else if (prev_tilt == 'l') {ldamp = 0; rdamp++;}
+    else if (prev_tilt == 'u') {udamp = 0; ddamp++;}
+    else if (prev_tilt == 'd') {ddamp = 0; udamp++;}
 	
 	//obtain 3d bounds
 	int r = BALL_SIZE/2+1;
-	int minBallX = cx-r;
-	int minBallY = cy-r;
-	int maxBallX = cx+r;
-	int maxBallY = cy+r;
+	int minBallX = cx-(r-ldamp);
+	int minBallY = cy-(r-udamp);
+	int maxBallX = cx+(r-rdamp);
+	int maxBallY = cy+(r-ddamp);
 	
 	//for each of the 9 surrounding tiles:
 	for (int i = -1; i <=1; i++){
@@ -1749,7 +2006,6 @@ void draw_go_letter(int letter, int tx, int ty, short color) {
 void show_game_over_screen(void) {
 
     volatile int *pixel_ctrl = (int *)0xFF203020;
-
     *(pixel_ctrl+1) = (int)&Buffer2;
     *pixel_ctrl = 1;
     while ((*(pixel_ctrl+3) & 0x01) != 0);
@@ -1759,7 +2015,7 @@ void show_game_over_screen(void) {
     short ring_colors[6] = {0x07FF, 0xF81F, 0xFFE0, 0xFD20, 0xF800, 0xFFFF};
     int max_radius = 210;
 
-    for (int r = 0; r <= max_radius; r += 3) {
+    for (int r = 0; r <= max_radius; r += 5) {
         int band = (r * 6) / max_radius;
         if (band >= 6) band = 5;
         draw_ring(r, ring_colors[band]);
@@ -1773,52 +2029,52 @@ void show_game_over_screen(void) {
     }
 
     // fill fully black
-    clear(BLACK);
-    *(pixel_ctrl + 1) = (int)back_buffer;
-    *pixel_ctrl = 1;
-    wait_for_vsync();
-    back_buffer = (back_buffer == Buffer1) ? Buffer2 : Buffer1;
-
     {int k = 0;
-        while (k<60) {
+        while (k<10) {
+            clear(BLACK);
+            *(pixel_ctrl + 1) = (int)back_buffer;
+            *pixel_ctrl = 1;
+            back_buffer = (back_buffer == Buffer1) ? Buffer2 : Buffer1;
             wait_for_vsync();
             update_audio();
             k++;
         }
     
     }
-    
-    // phase 4: letters appear one by one
-    int letter_x[8] = {94, 112, 130, 148, 94, 112, 130, 148};
-    int letter_y[8] = {85,  85,  85,  85, 105, 105, 105, 105};
-    short letter_colors[8] = {
-        0x07FF, 0xF81F, 0xFFE0, 0xFD20,   // G A M E
-        0xF800, 0x07FF, 0xF81F, 0xFFE0    // O V E R
-    };
-
-    for (int i = 0; i < 8; i++) {
-        draw_go_letter(i, letter_x[i], letter_y[i], letter_colors[i]);
-        go_delay(40000);
-    }
-
-    // blinking press any key bar
-    for (int blink = 0; blink < 6; blink++) {
-        draw_rect(90, 165, 140, 6, 0xFFFF);
-        go_delay(500000);
-        draw_rect(90, 165, 140, 6, 0x0000);
-        go_delay(500000);
-    }
-    draw_rect(90, 165, 140, 6, 0xFFFF);
-
-    *(pixel_ctrl + 1) = (int)back_buffer;
-    *pixel_ctrl = 1;
-    wait_for_vsync();
-    back_buffer = (back_buffer == Buffer1) ? Buffer2 : Buffer1;
 
     // wait for keypress
+    int blink = 0;
+
     volatile int *ps2_ptr = (volatile int *)0xFF200100;
-    while (*ps2_ptr & 0x8000) { volatile int dummy = *ps2_ptr; (void)dummy; }
-    while (!(*ps2_ptr & 0x8000));
+    while (*ps2_ptr & 0x8000) { 
+        volatile int dummy = *ps2_ptr; 
+        (void)dummy; 
+    }
+    while (!(*ps2_ptr & 0x8000)){
+        plot_game_over();
+
+        if (blink) {
+            for(int y = 150; y < 200; y++){
+                for(int x = 130; x < 180; x++){
+                    plot_pixel(x,y,BLACK);
+                }
+            }
+        }
+
+        if(timer_hw_tick()){
+            if(blink==0) blink++;
+            else if(blink == 1)blink--;
+        }
+
+
+
+        *(pixel_ctrl + 1) = (int)back_buffer;
+        *pixel_ctrl = 1;
+        wait_for_vsync();
+        back_buffer = (back_buffer == Buffer1) ? Buffer2 : Buffer1;
+
+    }
+    gameState = 0;
 
     
 }
@@ -1834,6 +2090,9 @@ void draw_map(int m, char tilt) {
 	plot_scoreboard();
 	plot_score(playerScore, computerScore);
 	draw_timer(round_timer_sec);
+    plot_level_disp(game_mode);
+    plot_pause_button();
+
 
     for (int row = 0; row < ROWS; row++)
         for (int col = 0; col < COLS; col++)
@@ -1850,10 +2109,15 @@ void draw_map(int m, char tilt) {
 // ────────────────────────────────────────────────────────────────────────────
 // round reset — pick new map, place both balls, spawn target
 // ────────────────────────────────────────────────────────────────────────────
+int justBounced = 0;
+int cyclesSinceBounce;
 
 void reset_round(int *cm, int *px, int *py) {
     round_timer_sec  = ROUND_TIME_SEC; 
     timer_tick_count = 0; 
+
+    erase_portals();
+    portal.active = 0;
 
     *cm = rand() % NUM_MAPS;
     draw_map(*cm, 'n');
@@ -1871,14 +2135,14 @@ void reset_round(int *cm, int *px, int *py) {
     spawn_target(*cm, 1, 1);
 	prev_tilt = 'u';
 
+    justBounced = 0;
+    cyclesSinceBounce = 0;
+
 }
 
 // ────────────────────────────────────────────────────────────────────────────
 // main game loop
 // ────────────────────────────────────────────────────────────────────────────
-
-int justBounced = 0;
-int cyclesSinceBounce;
 
 int main(void) {
     volatile int *pixel_ctrl = (int *)0xFF203020;
@@ -1916,224 +2180,245 @@ int main(void) {
     mpu_write_reg(gpio, REG_PWR_MGMT, 0x00);  // wake up
     mpu_write_reg(gpio, 0x1A, 0x03);           // low-pass filter
 
-
     while (1) {
-        
         update_audio();
-        //drawings
-        draw_map(cm, prev_tilt);
-        draw_target(target_col, target_row, COL_TARGET);
-        draw_ball(px, py, COL_PLAYER, prev_tilt);
-        if (game_mode != MODE_FREE)
-            draw_ball(agent_px, agent_py, COL_AGENT, prev_tilt);
 
-        //calculations
+        if (gameState==0){ //Main Menu
+            clear(BLACK);
+            plot_main_menu();
+            updateDodecahedron();
+            theta = (theta + 1) % 360;
+            plot_logo();
+        }
+        else if (gameState==1) { //GAME
+            //drawings
+            draw_map(cm, prev_tilt);
+            draw_target(target_col, target_row, COL_TARGET);
+            draw_ball(px, py, COL_PLAYER, prev_tilt);
+            if (game_mode != MODE_FREE)
+                draw_ball(agent_px, agent_py, COL_AGENT, prev_tilt);
 
-        //Things that happen once per second
-        if (timer_hw_tick()) {
-            //Tickdown the timer
-            round_timer_sec--;
-            if (round_timer_sec <= 0) {
-                trigger_clip(snd_game_over, snd_game_over_len);
-                
-                volatile int d = 0; while (d < 2000000) d++;
-                show_game_over_screen();
+            //calculations
+            //Things that happen once per second
+            if (timer_hw_tick()) {
+                //Tickdown the timer
+                round_timer_sec--;
+                if (round_timer_sec <= 0) {
+                    trigger_clip(snd_game_over, snd_game_over_len);
+                    
+                    volatile int d = 0; while (d < 2000000) d++;
+                    show_game_over_screen();
 
-                playerScore = 0;
-                computerScore = 0;
-                round_timer_sec = ROUND_TIME_SEC;
-                ballSpeed   = 0;
-                prev_tilt  = 'n';
-                agent_tick = 0;
-                reset_round(&cm, &px, &py);
-            }
-
-            //move agent if a mode is active
-            if (game_mode != MODE_FREE) {
-
-                int ac = px_to_col(agent_px);
-                int ar = py_to_row(agent_py);
-
-                agent_px = col_to_px(ac);
-                agent_py = row_to_py(ar);
-
-                int action = 0;
-
-                // MODE SWITCH
-                if (game_mode == MODE_RANDOM) { //key 0
-                    action = random_action(cm, ac, ar);
+                    playerScore = 0;
+                    computerScore = 0;
+                    round_timer_sec = ROUND_TIME_SEC;
+                    ballSpeed   = 0;
+                    prev_tilt  = 'n';
+                    agent_tick = 0;
+                    reset_round(&cm, &px, &py);
+                    continue;
                 }
-                else if (game_mode == MODE_DFS) { //key 1
-                    if (dfs_index >= dfs_len) {
-                        compute_dfs_path(cm, ac, ar); // recompute if needed
+
+                //move agent if a mode is active
+                if (game_mode != MODE_FREE) {
+
+                    int ac = px_to_col(agent_px);
+                    int ar = py_to_row(agent_py);
+
+                    agent_px = col_to_px(ac);
+                    agent_py = row_to_py(ar);
+
+                    int action = 0;
+
+                    // MODE SWITCH
+                    if (game_mode == MODE_RANDOM) { //key 0
+                        action = random_action(cm, ac, ar);
                     }
-                    action = dfs_next_action(cm, ac, ar);
+                    else if (game_mode == MODE_DFS) { //key 1
+                        if (dfs_index >= dfs_len) {
+                            compute_dfs_path(cm, ac, ar); // recompute if needed
+                        }
+                        action = dfs_next_action(cm, ac, ar);
+                    }
+                    else if (game_mode == MODE_RL) { //key 2
+                        action = qt_best_action(ac, ar, target_col, target_row, cm); //use the table c array thing
+                    }
+
+                    int nac = ac, nar = ar; //update positions
+
+                    if (action == 0) nar--;
+                    else if (action == 1) nar++;
+                    else if (action == 2) nac--;
+                    else if (action == 3) nac++;
+
+                    if (nac >= 0 && nac < COLS && nar >= 0 && nar < ROWS && maps[cm][nar][nac] == 0) {
+                        agent_px = col_to_px(nac);
+                        agent_py = row_to_py(nar);
+                    }
                 }
-                else if (game_mode == MODE_RL) { //key 2
-                    action = qt_best_action(ac, ar, target_col, target_row, cm); //use the table c array thing
-                }
 
-                int nac = ac, nar = ar; //update positions
-
-                if (action == 0) nar--;
-                else if (action == 1) nar++;
-                else if (action == 2) nac--;
-                else if (action == 3) nac++;
-
-                if (nac >= 0 && nac < COLS && nar >= 0 && nar < ROWS && maps[cm][nar][nac] == 0) {
-                    agent_px = col_to_px(nac);
-                    agent_py = row_to_py(nar);
-                }
             }
-
-        }
-
-        int nx = px, ny = py;
-
-        if(ballSpeed<15)
-            ballSpeed++;
-            
-        if(prev_tilt == 'u'){
-            ny-=ballSpeed;
-        } 
-        else if(prev_tilt == 'd') {
-            ny+=ballSpeed;
-        } 
-        else if(prev_tilt == 'r'){
-            nx+=ballSpeed;
-        } 
-        else if(prev_tilt == 'l'){
-            nx-=ballSpeed;
-        }
-                
-        
-        
-        if (!hits_wall(cm, nx, ny)) {   
-            px = nx; 
-            py = ny;
-        } 
-        
-        else {
-            //trigger_sound(SOUND_WALL);
-            if (!justBounced){
-                ballSpeed *= -1;
-                justBounced=1;
-            }
-        }
-
-        // Portal spawn/despawn timer 
-        portal_spawn_timer++;
-        if (!portal.active && portal_spawn_timer >= PORTAL_SPAWN_INTERVAL) {
-            portal_spawn_timer = 0;
-            spawn_portal(cm, px, py);
-        }
-        if (portal.active) {
-            portal.life--;
-            if (portal.life <= 0) {
-                erase_portals();
-                portal.active = 0;
-                portal_spawn_timer = 0;
-            }
-        }
-
-        // Portal teleport check (after moving ball) ────────────────────
-        int dest_col, dest_row;
-        if (check_portal(px, py, &dest_col, &dest_row)) {
-    
-            portal.active = 0;
-            portal_spawn_timer = 0;
-            // land the ball in the center of the destination tile
-            px = col_to_px(dest_col);
-            py = row_to_py(dest_row);
-            ballSpeed = 0;   // brief pause after warp feels good
-
-        }
-
-        if (reached_target(px, py, target_col, target_row)) {
-            playerScore++;
-            trigger_clip(snd_target, snd_target_len);
-
-            ballSpeed=0;
-            reset_round(&cm, &px, &py);
-            agent_tick = 0;
-            prev_tilt = 'n';
-            dfs_index = dfs_len = 0;
-
-        }
-
-        if (reached_target(agent_px, agent_py, target_col, target_row)) {
-            computerScore++;
-            trigger_clip(snd_target, snd_target_len);  
-
-            reset_round(&cm, &px, &py);
-            dfs_index = dfs_len = 0; // reset DFS state
-            continue;
-        }
-            
-        // ── PLAYER PHYSICS ────────────────────────────────────────────────
-        update_audio();
-        phys_tick++;
-		if(justBounced){
-			cyclesSinceBounce++;
-		}
-		if(cyclesSinceBounce == 2){
-			justBounced = 0;
-			cyclesSinceBounce = 0;
-		}
-        if (phys_tick >= 20) {
-            phys_tick = 0;
-
-            // advance portal animation
-            if (portal.active) {
-                portal_frame_timer++;
-                if (portal_frame_timer >= PORTAL_ANIM_SPEED) {
-                    portal_frame_timer = 0;
-                    // erase old frame before drawing new one
-                    erase_portals();
-                    portal_frame = (portal_frame + 1) % PORTAL_FRAME_COUNT;
-                    draw_portals();
-                }
-            }
-        }
-		
-        // ── ACCELEROMETER INPUT ───────────────────────────────────────────
-        if (1) {
-            unsigned char abuf[6];
-            mpu_read_regs(gpio, REG_ACCEL_X_H, abuf, 6);
-            short ax = -(short)((abuf[0] << 8) | abuf[1]);
-            short ay = -(short)((abuf[2] << 8) | abuf[3]);
-
-            int abs_ax = ax < 0 ? -ax : ax;
-            int abs_ay = ay < 0 ? -ay : ay;
 
             int nx = px, ny = py;
-            char new_tilt = 'n';
 
-            if (abs_ax > TILT_THRESHOLD || abs_ay > TILT_THRESHOLD) {
-                if (abs_ax >= abs_ay) {
-                    // X axis dominant
-                    if (ax > 0) { new_tilt = 'l'; nx-=5; }
-                    else        { new_tilt = 'r'; nx+=5; }
-                } else {
-                    // Y axis dominant
-                    if (ay > 0) { new_tilt = 'd'; ny+=5; }
-                    else        { new_tilt = 'u'; ny-=5; }
-                }
-
-                if (new_tilt != prev_tilt) {
-                    prev_tilt = new_tilt;
-                    ballSpeed = 0;
-                }
-
-                // Move ball one tile if not hitting a wall
-                if (!hits_wall(cm, nx, ny)) {
-                    px = nx;
-                    py = ny;
+            if(ballSpeed<15)
+                ballSpeed++;
+                
+            if(prev_tilt == 'u'){
+                ny-=ballSpeed;
+            } 
+            else if(prev_tilt == 'd') {
+                ny+=ballSpeed;
+            } 
+            else if(prev_tilt == 'r'){
+                nx+=ballSpeed;
+            } 
+            else if(prev_tilt == 'l'){
+                nx-=ballSpeed;
+            }
+                    
+            
+            
+            if (!hits_wall(cm, nx, ny)) {   
+                px = nx; 
+                py = ny;
+            } 
+            
+            else {
+                //trigger_sound(SOUND_WALL);
+                if (!justBounced){
+                    ballSpeed *= -1;
+                    justBounced=1;
                 }
             }
-        }
-        // ── END ACCELEROMETER INPUT ───────────────────────────────────────
 
+            // Portal spawn/despawn timer 
+            portal_spawn_timer++;
+            if (!portal.active && portal_spawn_timer >= PORTAL_SPAWN_INTERVAL) {
+                portal_spawn_timer = 0;
+                spawn_portal(cm, px, py);
+            }
+            if (portal.active) {
+                portal.life--;
+                if (portal.life <= 0) {
+                    erase_portals();
+                    portal.active = 0;
+                    portal_spawn_timer = 0;
+                }
+            }
+
+            // Portal teleport check (after moving ball) ────────────────────
+            int dest_col, dest_row;
+            if (check_portal(px, py, &dest_col, &dest_row)) {
+        
+                portal.active = 0;
+                portal_spawn_timer = 0;
+                // land the ball in the center of the destination tile
+                px = col_to_px(dest_col);
+                py = row_to_py(dest_row);
+                ballSpeed = 0;   // brief pause after warp feels good
+
+            }
+
+            if (reached_target(px, py, target_col, target_row)) {
+                playerScore++;
+                trigger_clip(snd_target, snd_target_len);
+
+                reset_round(&cm, &px, &py);
+                agent_tick = 0;
+                ballSpeed=0;
+                prev_tilt = 'n';
+                dfs_index = dfs_len = 0;
+
+            }
+
+            if (reached_target(agent_px, agent_py, target_col, target_row)) {
+                computerScore++;
+                trigger_clip(snd_target, snd_target_len);  
+
+                reset_round(&cm, &px, &py);
+                ballSpeed=0;
+                prev_tilt = 'n';
+                dfs_index = dfs_len = 0; // reset DFS state
+                continue;
+            }
+                
+            // ── PLAYER PHYSICS ────────────────────────────────────────────────
+            update_audio();
+            phys_tick++;
+            if(justBounced){
+                cyclesSinceBounce++;
+            }
+            if(cyclesSinceBounce == 2){
+                justBounced = 0;
+                cyclesSinceBounce = 0;
+            }
+            if (phys_tick >= 20) {
+                phys_tick = 0;
+
+                // advance portal animation
+                if (portal.active) {
+                    portal_frame_timer++;
+                    if (portal_frame_timer >= PORTAL_ANIM_SPEED) {
+                        portal_frame_timer = 0;
+                        // erase old frame before drawing new one
+                        erase_portals();
+                        portal_frame = (portal_frame + 1) % PORTAL_FRAME_COUNT;
+                        draw_portals();
+                    }
+                }
+            }
+            
+            // ── ACCELEROMETER INPUT ───────────────────────────────────────────
+            if (1) {
+                unsigned char abuf[6];
+                mpu_read_regs(gpio, REG_ACCEL_X_H, abuf, 6);
+                short ax = -(short)((abuf[0] << 8) | abuf[1]);
+                short ay = -(short)((abuf[2] << 8) | abuf[3]);
+
+                int abs_ax = ax < 0 ? -ax : ax;
+                int abs_ay = ay < 0 ? -ay : ay;
+
+                int nx = px, ny = py;
+                char new_tilt = 'n';
+
+                if (abs_ax > TILT_THRESHOLD || abs_ay > TILT_THRESHOLD) {
+                    if (abs_ax >= abs_ay) {
+                        // X axis dominant
+                        if (ax > 0) { new_tilt = 'l'; }
+                        else        { new_tilt = 'r'; }
+                    } else {
+                        // Y axis dominant
+                        if (ay > 0) { new_tilt = 'd'; }
+                        else        { new_tilt = 'u'; }
+                    }
+
+                    if (new_tilt != prev_tilt) {
+                        prev_tilt = new_tilt;
+                        ballSpeed = 0;
+                    }
+
+                    // Move ball one tile if not hitting a wall
+                    if (!hits_wall(cm, nx, ny)) {
+                        px = nx;
+                        py = ny;
+                    }
+                }
+            }
+            // ── END ACCELEROMETER INPUT ───────────────────────────────────────
+
+        }
+        else if (gameState==2) {
+            plot_pause();
+        }
+        else if (gameState==3) {
+            clear(BLACK);
+            plot_logo();
+            plot_movement();
+            plot_diff();
+            plot_back();
+        }
+        
 
 		
         // PLAYER KEYBOARD INPUT 
@@ -2146,41 +2431,74 @@ int main(void) {
             if (b == 0xF0) { skip=1; continue; }    // next byte is a key release
             if (b == 0xE0) { e0=1;   continue; }    // next byte is extended key			
 			
+            if(b==0x29) { //space
+                if(gameState==0) {
+                    reset_round(&cm, &px, &py);
+                    computerScore = 0;
+                    playerScore = 0;
+                    gameState = 1;
+                }else if (gameState == 2){
+                    gameState = 0;
+                }else if (gameState == 3) {
+                    gameState = 0;
+                }else if (gameState ==4) {
+                    gameState = 0;
+                }
+            }
+
+            if (b==0x4D) {//P
+                if(gameState == 1) {
+                    gameState = 2;
+                } else if (gameState ==2) {
+                    gameState = 1;
+                }
+            }
+
 			// MODE SWITCH KEYS (check first before player movement)
             if (!e0) {
                 if (b == 0x45) {  // '0' — free/player only
-                    game_mode = MODE_FREE;
-                    dfs_index = dfs_len = 0;
-                    draw_map(cm, prev_tilt);
-                    draw_target(target_col, target_row, COL_TARGET);
-                    draw_ball(px, py, COL_PLAYER, prev_tilt);
+                    if (gameState==1){
+                        game_mode = MODE_FREE;
+                        dfs_index = dfs_len = 0;
+                        draw_map(cm, prev_tilt);
+                        draw_target(target_col, target_row, COL_TARGET);
+                        draw_ball(px, py, COL_PLAYER, prev_tilt);
+                    }
                 }
                 else if (b == 0x16) {  // '1' — random
-                    game_mode = MODE_RANDOM;
-                    dfs_index = dfs_len = 0;
-                    draw_map(cm, prev_tilt);
-                    draw_target(target_col, target_row, COL_TARGET);
-                    if (game_mode != MODE_FREE)
-                        draw_ball(agent_px, agent_py, COL_AGENT, prev_tilt);
-                    draw_ball(px, py, COL_PLAYER, prev_tilt);
+                    if (gameState==1){
+                        game_mode = MODE_RANDOM;
+                        dfs_index = dfs_len = 0;
+                        draw_map(cm, prev_tilt);
+                        draw_target(target_col, target_row, COL_TARGET);
+                        if (game_mode != MODE_FREE)
+                            draw_ball(agent_px, agent_py, COL_AGENT, prev_tilt);
+                        draw_ball(px, py, COL_PLAYER, prev_tilt);
+                    }
+                    if(gameState ==0) {gameState =3;}
                 }
                 else if (b == 0x1E) {  // '2' — DFS
-                    game_mode = MODE_DFS;
-                    dfs_index = dfs_len = 0;
-                    draw_map(cm, prev_tilt);
-                    draw_target(target_col, target_row, COL_TARGET);
-                    if (game_mode != MODE_FREE)
-                        draw_ball(agent_px, agent_py, COL_AGENT, prev_tilt);
-                    draw_ball(px, py, COL_PLAYER, prev_tilt);
+                    if (gameState==1){
+                        game_mode = MODE_DFS;
+                        dfs_index = dfs_len = 0;
+                        draw_map(cm, prev_tilt);
+                        draw_target(target_col, target_row, COL_TARGET);
+                        if (game_mode != MODE_FREE)
+                            draw_ball(agent_px, agent_py, COL_AGENT, prev_tilt);
+                        draw_ball(px, py, COL_PLAYER, prev_tilt);
+                    }
                 }
                 else if (b == 0x26) {  // '3' — RL
-                    game_mode = MODE_RL;
-                    dfs_index = dfs_len = 0;
-                    draw_map(cm, prev_tilt);
-                    draw_target(target_col, target_row, COL_TARGET);
-                    if (game_mode != MODE_FREE)
-                        draw_ball(agent_px, agent_py, COL_AGENT, prev_tilt);
-                    draw_ball(px, py, COL_PLAYER, prev_tilt);
+                    if (gameState==1){
+                        game_mode = MODE_RL;
+                        dfs_index = dfs_len = 0;
+                        draw_map(cm, prev_tilt);
+                        draw_target(target_col, target_row, COL_TARGET);
+                        if (game_mode != MODE_FREE)
+                            draw_ball(agent_px, agent_py, COL_AGENT, prev_tilt);
+                        draw_ball(px, py, COL_PLAYER, prev_tilt);
+                    }
+                    
                 }
             }
 
