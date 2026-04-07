@@ -624,7 +624,7 @@ void plot_pause() {
 }
 
 #define LOGO_PX_SIZE 1
-#define LOGO_X 290
+#define LOGO_X 285
 #define LOGO_Y 195
 	
 int logo[28][34] = {
@@ -1156,7 +1156,7 @@ void draw_wall_tile(int col, int row, char tilt) {
 void draw_timer(int seconds) {
     // erase old timer area first
    // draw_rect(TIMER_X, TIMER_Y, 16, 12, BLACK);
-   seconds = seconds%30;
+   seconds = seconds/2;
 
     short colors[] = {BLACK, WHITE};
     int d1 = seconds / 10;   // tens digit
